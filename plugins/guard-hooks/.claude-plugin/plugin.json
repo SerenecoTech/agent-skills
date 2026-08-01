@@ -1,0 +1,11 @@
+{
+  "name": "guard-hooks",
+  "description": "Security guardrails enforced by PreToolUse hooks: deny dangerous shell commands and privilege escalation, block writes to credential files and system directories, detect secrets in written content, pre-approve provably-safe rm of in-project files, enforce the project's declared package manager, and warn on destructive git operations.",
+  "version": "0.1.0",
+  "author": {
+    "name": "SerenecoTech"
+  },
+  "homepage": "https://github.com/serenecotech/agent-skills",
+  "license": "MIT",
+  "keywords": ["security", "hooks", "guardrails", "secrets", "toolchain"]
+}

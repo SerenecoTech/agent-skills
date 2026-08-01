@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Adversarial review findings",
+  "description": "Passed to every codex call via --output-schema. Prose output is never parsed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reviewed_path", "probe_echo", "probes_run", "findings"],
+  "properties": {
+    "reviewed_path": {
+      "type": "string",
+      "description": "Absolute path of the artefact reviewed. Recorded so proof of work can be re-run after the artefact moves or is renamed."
+    },
+    "probe_echo": {
+      "type": "array",
+      "description": "Verbatim text of the line numbers requested in the brief, chosen unpredictably at launch. Byte-exact.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["line", "text"],
+        "properties": {
+          "line": { "type": "integer" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "probes_run": {
+      "type": "array",
+      "description": "Stable probe ids from the rubric that this round actually ran. Used to check the convergence rule.",
+      "items": { "type": "string" }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "probe_id", "severity", "claim", "scenario", "citation", "falsifier"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Reviewer's own label. Not authoritative — the adjudicator canonicalises identity from evidence."
+          },
+          "probe_id": {
+            "type": "string",
+            "description": "Which rubric probe produced this."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["fatal", "high", "medium", "low"]
+          },
+          "claim": {
+            "type": "string",
+            "description": "One sentence stating the defect."
+          },
+          "scenario": {
+            "type": "string",
+            "description": "Concrete: inputs or state, what happens, and the wrong outcome. Not an opinion about quality."
+          },
+          "citation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "line", "verbatim"],
+            "properties": {
+              "file": { "type": "string" },
+              "line": { "type": "integer" },
+              "verbatim": {
+                "type": "string",
+                "description": "Substring copied byte-for-byte from the cited line. Checked mechanically; a paraphrase fails."
+              }
+            }
+          },
+          "falsifier": {
+            "type": "string",
+            "description": "The observation that would prove this finding wrong. Required — it makes adjudication cheap and starves out unfalsifiable noise."
+          }
+        }
+      }
+    },
+    "no_findings_reason": {
+      "type": "string",
+      "description": "If findings is empty, why. A thin honest round is more useful than a padded one."
+    }
+  }
+}

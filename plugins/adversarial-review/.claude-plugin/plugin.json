@@ -1,0 +1,9 @@
+{
+  "name": "adversarial-review",
+  "description": "Adversarial code, architecture and specification review using OpenAI Codex as a second hostile reviewer. Two front doors (review-code, review-design) over one shared engine, plus PreToolUse hooks that enforce what a skill cannot: write-path authorisation, refutation-appendix ingestion, and rubric integrity.",
+  "version": "0.1.0",
+  "author": {
+    "name": "3DCreations"
+  },
+  "skills": "./skills/"
+}

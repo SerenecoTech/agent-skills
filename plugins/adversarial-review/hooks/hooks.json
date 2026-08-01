@@ -1,0 +1,47 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/write-path-gate.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking write authorisation"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/appendix-gate.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking refutation appendix"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/rubric-gate.sh\"",
+            "timeout": 5,
+            "statusMessage": "Validating rubric integrity"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/verification-recorder.sh\"",
+            "timeout": 5,
+            "statusMessage": "Recording verification evidence"
+          }
+        ]
+      }
+    ]
+  }
+}
