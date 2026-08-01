@@ -1,56 +1,67 @@
 # handoff
 
-Two skills for the same problem: work outlives the context window, and the user should never have
-to explain the task twice.
+Two skills for one problem: work outlasts the context window, and you shouldn't have to explain the
+same task twice.
 
-`handoff` writes the record. `handoff-resume` reads it and continues. They are packaged together
-because a handoff written in a format nothing reads is just a file, and a resumer with nothing to
-resume is dead weight — the `▶ Resume This Work` block is the contract between them.
+`handoff` writes the record. `handoff-resume` reads it and carries on. They ship together because
+the `▶ Resume This Work` block at the top of the file is the contract between them — one writes it,
+the other acts on it.
+
+## Using it
+
+Both skills trigger from ordinary phrasing. There are no commands to memorise.
+
+```text
+handoff                                  before /clear, or when context is running low
+wrap up, we'll continue tomorrow
+summarize this for the next session
+
+resume                                   in a fresh session
+continue where we left off
+pick up the handoff
+```
+
+The first group writes `HANDOFF.md` in the working directory. The second finds it, checks the repo
+hasn't moved underneath it, and starts work.
+
+## What ends up in the file
+
+Goal, branch and commit, what's done and what isn't, and decisions with the reasoning attached.
+
+The section that earns its keep is **failed approaches**, which is mandatory whenever there are any.
+A fresh agent that doesn't know what was already tried will try it again, confidently.
+
+It also records a **posture** — start the work, confirm once first, or open with blocking questions.
+That's what lets `handoff-resume` act instead of interrogating you.
+
+An existing `HANDOFF.md` is archived to `.claude/handoff/handoff-<YYYYMMDD-HHMM>.md` rather than
+overwritten.
+
+## What resuming does first
+
+`handoff-resume` reads the file, then **checks for drift** with `git status` and `git log` against
+the branch and commit the handoff names. A handoff describes the repository as it was, and the
+repository may have moved since. When it has, that gets raised and reconciled before anything is
+built on top of it. Only then does the posture apply.
+
+## Worth knowing
+
+- When `handoff` offers proactively, it asks first. A handoff written without confirmation costs you
+  a file you didn't ask for, at the moment you had the least context to review it. An explicit
+  request writes straight away.
+- Neither skill invents a handoff. If there isn't one, `handoff-resume` says so and stops.
+- Finished work doesn't need one. The diff, the PR and the commit message are the handoff.
 
 ## Requirements
 
 | Dependency | Required | Used for |
 |---|---|---|
-| `git` | yes | `handoff` records branch and recent commits; `handoff-resume` drift-checks against them |
-| a file-based agent memory | no | linked as `[[slug]]` if the harness has one; skipped otherwise |
-| [`memsearch`](https://github.com/zilliztech/memsearch) | no | seeds semantic recall queries when `.memsearch/` exists |
+| `git` | yes | recording branch and commits, and the drift check on resume |
+| an agent memory directory | no | linked as `[[slug]]` when the harness has one |
+| [`memsearch`](https://github.com/zilliztech/memsearch) | no | seeding semantic recall queries when `.memsearch/` exists |
 
-Both optional integrations degrade to nothing. Without them the handoff carries its own narrative
-and still works.
-
-## The two skills
-
-| Skill | Fires on |
-|---|---|
-| `handoff` | "handoff", "wrap up", "summarize for next session", before `/clear`, context running low mid-task |
-| `handoff-resume` | "resume", "continue", "pick up where we left off", or a `HANDOFF.md` present with work unfinished |
-
-### What `handoff` captures
-
-Goal, branch and commit, done vs. not done, decisions **with their rationale**, and — the section
-that carries the most value — **failed approaches**, which is mandatory whenever any exist. A
-fresh agent that doesn't know what was already tried will try it again.
-
-It also records a **posture**: whether the next session should start work, confirm once first, or
-open with blocking questions. That is what lets `handoff-resume` act rather than ask.
-
-Existing `HANDOFF.md` files are archived to `.claude/handoff/handoff-<YYYYMMDD-HHMM>.md`, never
-silently overwritten.
-
-### What `handoff-resume` does before acting
-
-Reads the handoff fully, then **drift-checks**: `git status` and `git log` against the branch and
-commit the handoff cites. A handoff is a map written in the past, and the tree may have moved. If
-it has, that gets surfaced and reconciled before anything is built on top of it. Only then does
-it honour the posture.
-
-## Behaviour worth knowing about
-
-- `handoff` **proposes rather than writes** when it is offering proactively — a handoff written
-  without confirmation costs you a file you didn't ask for at the moment you had least context to
-  review it. An explicit request writes immediately.
-- Neither skill invents a handoff. If `handoff-resume` finds none, it says so and stops.
-- Completed work needs no handoff. The diff, the PR and the commit message are the handoff.
+Both optional integrations degrade to nothing. Without them the handoff still carries its own
+narrative, which is most of the value.
 
 ## Install
 
@@ -59,11 +70,11 @@ claude plugin marketplace add serenecotech/agent-skills
 claude plugin install handoff@sereneco
 ```
 
-Skills are available immediately; no restart needed.
+Available immediately. No restart, since there are no hooks.
 
 ## Portability
 
-Both are plain `SKILL.md` files with no scripts, no hooks and no harness-specific tool calls, so
-they work anywhere skills are read from a directory — Claude Code via this plugin, or a
-shared skills store symlinked into whatever agent you run. The only Claude Code-shaped
-convention is the `.claude/handoff/` archive path.
+Both skills are plain `SKILL.md` files with no scripts and no harness-specific tool calls, so they
+work anywhere skills are read from a directory: Claude Code via this plugin, or a shared skills
+store symlinked into whatever else you run. The one Claude Code-shaped assumption is the
+`.claude/handoff/` archive path.

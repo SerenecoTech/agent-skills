@@ -1,24 +1,20 @@
 # agent-skills
 
-Agent plugins, skills and hooks. Built for real work rather than as demonstrations, which mostly
-shows up in what they refuse to do: the review plugin will not let an agent mark its own homework,
-the guards deny rather than advise, and every component states the guarantee it *cannot* make.
+Three plugins for Claude Code: adversarial code review, session handoff, and security guard hooks.
 
-Packaged in Claude Code's plugin format because that is what carries hooks. The skills themselves
-are plain Markdown and portable to any agent that reads skills from a directory — see
-[Portability](#portability).
+Bash and Markdown throughout. No build step, no runtime, nothing to compile.
 
-## Plugins
+## What's here
 
-| Plugin | What it does | Ships |
+| Plugin | Use it to | Contents |
 |---|---|---|
-| **[adversarial-review](plugins/adversarial-review/)** | Code, architecture and spec review with OpenAI Codex as a second, hostile reviewer. Codex finds; the agent adjudicates and fixes; Codex never writes to your repo. Four `PreToolUse` gates enforce what a skill cannot enforce on itself. | 2 skills, 4 hooks, 23 tests |
-| **[handoff](plugins/handoff/)** | Session continuity. Write a `HANDOFF.md` that captures the goal, what's done, decisions with rationale and — most valuably — failed approaches; then resume from it with a drift check, so nobody explains the task twice. | 2 skills |
-| **[guard-hooks](plugins/guard-hooks/)** | Security guardrails as hooks, not instructions. Denies dangerous shell commands, writes to credential files and system paths, and secrets in file content. Pre-approves provably-safe deletes, enforces the project's package manager, warns on destructive git. | 5 hooks, 266 tests |
+| **[adversarial-review](plugins/adversarial-review/)** | Review code, architecture or specs with OpenAI Codex as a hostile second reviewer. Codex finds problems, your agent fixes them, and Codex never writes to your repo. | 2 skills, 4 hooks, 23 tests |
+| **[handoff](plugins/handoff/)** | Survive context limits. Write a `HANDOFF.md` before `/clear`, then resume from it in a fresh session without re-explaining the task. | 2 skills |
+| **[guard-hooks](plugins/guard-hooks/)** | Block dangerous shell commands, writes to credential files, and secrets in file content. Enforced by hooks, so the agent can't talk its way past them. | 5 hooks, 266 tests |
+
+Each plugin has its own README with the detail.
 
 ## Install
-
-Add the marketplace once, then install whichever plugins you want:
 
 ```bash
 claude plugin marketplace add serenecotech/agent-skills
@@ -27,78 +23,68 @@ claude plugin install handoff@sereneco
 claude plugin install guard-hooks@sereneco
 ```
 
-Or browse interactively with `/plugin` inside Claude Code.
+Or run `/plugin` in Claude Code and browse.
 
-The two spellings are not a typo: `serenecotech` is the GitHub organisation, and the marketplace
-registers itself as `sereneco`.
+Both spellings are correct: `serenecotech` is the GitHub organisation, `sereneco` is the marketplace.
 
-**Skills work immediately. Hooks load at session start** — so `adversarial-review` and
-`guard-hooks` need a restart before they enforce anything. After restarting, confirm
-`claude plugin list` shows `Status: ✔ enabled`: a hook that fails to load is reported there and
-**not** by `claude plugin validate`.
+**Restart Claude Code after installing anything with hooks.** Skills load immediately; hooks load only at session start, so `adversarial-review` and `guard-hooks` sit inert until you restart. Then check that `claude plugin list` reports `Status: ✔ enabled`. That's where a hook that failed to load shows up — `claude plugin validate` won't tell you.
 
 ### Requirements
 
 | Plugin | Needs |
 |---|---|
-| adversarial-review | `codex` ≥ 0.146.0 (authenticated), `jq` ≥ 1.6, `bash` ≥ 4, `git`, coreutils, `shuf`; `gh` optional for PR targets |
-| handoff | `git`. Optional: a file-based agent memory, `memsearch` |
-| guard-hooks | `jq` ≥ 1.6, `bash` ≥ 4, coreutils |
+| adversarial-review | `codex` ≥ 0.146.0 (authenticated), `jq` ≥ 1.6, `bash` ≥ 4, `git`, `shuf`, coreutils. `gh` only if you review a PR by number. |
+| handoff | `git`. Optionally an agent memory directory and [memsearch](https://github.com/zilliztech/memsearch). |
+| guard-hooks | `jq` ≥ 1.6, `bash` ≥ 4, coreutils. |
 
-Everything is bash and Markdown. There is no build step and no runtime to install.
+## Layout
 
-## Design commitments
+```text
+.claude-plugin/marketplace.json    marketplace manifest
+plugins/                           Claude Code plugins; hooks require this format
+skills/                            standalone skills, no harness dependency
+```
 
-These are the rules the contents follow, and the reason they look the way they do.
+Skills inside the plugins are ordinary `SKILL.md` files with YAML frontmatter, so you can symlink
+one into a different agent's skills directory instead of installing the plugin. `handoff` and
+`handoff-resume` port cleanly, having no scripts or hooks at all. The genuinely Claude Code-specific
+pieces are `hooks.json` and `${CLAUDE_PLUGIN_ROOT}`.
 
-**A rule in a prompt is a request; a hook is a refusal.** Anything an agent could plausibly
-rationalise its way past — writing outside an authorised path, skipping a refutation it would
-rather not read, padding a rubric to satisfy a convergence check — belongs in a hook, because a
-hook is configured outside the model's control. This is the whole reason `adversarial-review`
-ships as a plugin instead of as skills alone.
+## Two conventions
 
-**Choose the failure direction deliberately, and say which you chose.** Security guards fail
-*closed*: a broken guard denies. Convention checks and review gates fail *open*: a check that
-blocks ordinary work when it breaks gets switched off, and a switched-off gate is worse than none,
-because the report still claims the guarantee. Each hook documents its own direction.
+Worth knowing before you send a patch, because they explain most of the design.
 
-**State the limits in the artifact, not just the README.** `adversarial-review` requires every
-report it produces to carry its own caveats — proof of work proves access, not comprehension; the
-reviewing agent is still sole writer, adjudicator and verifier. A limitation that only appears in
-documentation nobody re-reads is not disclosed.
+**Enforcement goes in hooks, not in prose.** A rule written into a skill is advice, and an agent
+can reason its way past advice. Constraints that actually matter — don't write outside these paths,
+don't skip this file — go into a hook, which is configured where the model can't reach it. The
+[adversarial-review README](plugins/adversarial-review/#why-hooks-and-not-more-instructions) works
+through why that plugin needs four of them.
 
-**Tests must be able to fail.** Two guard suites shipped here originally exited zero regardless of
-result, which made their green meaningless. They now exit non-zero, and that was verified by
-injecting a deliberate failure and confirming the runner caught it.
-
-## Portability
-
-The repository is deliberately not Claude-specific, though the packaging currently is:
-
-- **`plugins/`** — Claude Code plugin format. Required for hooks, since `hooks.json` and
-  `${CLAUDE_PLUGIN_ROOT}` are Claude Code contracts.
-- **`skills/`** — standalone skills with no harness dependency, for tools that read skills from a
-  directory rather than installing plugins.
-
-Skills inside plugins are ordinary `SKILL.md` files with YAML frontmatter. Nothing stops you
-symlinking one into another agent's skills directory; `handoff` and `handoff-resume` in particular
-have no scripts, no hooks and no harness-specific tool calls.
+**Every hook states which way it fails.** Security guards fail closed: if the guard itself errors,
+the call is denied. Convention checks and review gates fail open, because a check that blocks
+ordinary work when it breaks gets switched off, and a switched-off check is worse than no check at
+all — the report still claims the guarantee. Each hook table says which applies.
 
 ## Contributing
 
-Issues are open — bug reports, false positives from the guards, and portability reports from other
-agent harnesses are all useful. A false positive in `guard-hooks` is a real bug: a guard that
-blocks legitimate work gets disabled, which defeats it entirely.
+Issues are open. Bug reports, false positives from the guards, and portability reports from other
+agent harnesses are all welcome.
+
+Treat a `guard-hooks` false positive as a real bug rather than a nuisance. A guard that blocks
+legitimate work is a guard someone will switch off, and then it protects nothing.
 
 For pull requests:
 
-1. Run the relevant tests and include the output. `bash plugins/guard-hooks/tests/run-all.sh` and
-   `bash plugins/adversarial-review/hooks/test-gates.sh`.
-2. Add a test with any behaviour change. For a guard, add both the case that should be caught and
-   the near-miss that should not.
-3. Keep fail-open and fail-closed decisions explicit, and update the hook's table if you change one.
-4. Don't add a rule to a skill that a hook should enforce, or a hook for something a skill states
-   perfectly well.
+1. Run the tests and paste the output.
+
+   ```bash
+   bash plugins/guard-hooks/tests/run-all.sh
+   bash plugins/adversarial-review/hooks/test-gates.sh
+   ```
+
+2. Add a test for any behaviour change. For a guard, cover both the case that should be caught and
+   the near-miss that shouldn't.
+3. If you add a hook, say which way it fails and add it to the plugin's hook table.
 
 ## Licence
 
