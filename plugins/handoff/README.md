@@ -13,7 +13,7 @@ resume is dead weight — the `▶ Resume This Work` block is the contract betwe
 |---|---|---|
 | `git` | yes | `handoff` records branch and recent commits; `handoff-resume` drift-checks against them |
 | a file-based agent memory | no | linked as `[[slug]]` if the harness has one; skipped otherwise |
-| `memsearch` | no | seeds semantic recall queries when `.memsearch/` exists |
+| [`memsearch`](https://github.com/zilliztech/memsearch) | no | seeds semantic recall queries when `.memsearch/` exists |
 
 Both optional integrations degrade to nothing. Without them the handoff carries its own narrative
 and still works.
