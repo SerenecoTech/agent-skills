@@ -154,17 +154,3 @@ Every report the engine produces has to carry these, because none of them is sol
   where it writes, but bias in what it confirms or refutes is **narrowed, not closed.**
 - Prompt injection against an unsandboxed reviewer is out of scope here. That belongs to the sandbox
   layer.
-
-## Provenance
-
-The design went through four rounds of adversarial review before anything was implemented. Round 2
-produced seven fatal findings and forced a subtractive redesign. Rounds 3 and 4 closed with zero
-fatal findings and declining counts, which is what "converged" meant here.
-
-Three findings were declared **unfixable by design**, on the grounds that a self-administered
-protocol can't guarantee anything against its own administrator. That conclusion is why the hooks
-exist.
-
-The spec and per-round materials stayed in the private repository this plugin was extracted from.
-The load-bearing conclusions are restated in `engine/ENGINE.md` and in the limitations above, so
-nothing you need in order to use the plugin depends on reading them.
