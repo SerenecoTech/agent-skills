@@ -30,7 +30,7 @@ restrictive mode is both available and preferable.
 
 ## Layout
 
-```
+```text
 adversarial-review/
 ├── .claude-plugin/plugin.json
 ├── engine/                        # shared reference, deliberately not a skill
@@ -114,7 +114,7 @@ blocks unrelated work in the following session.
 
 ```bash
 claude plugin marketplace add serenecotech/agent-skills
-claude plugin install adversarial-review@serenecotech
+claude plugin install adversarial-review@sereneco
 ```
 
 Skills are usable immediately. **Hooks load at session start**, so restart before expecting

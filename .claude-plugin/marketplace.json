@@ -1,11 +1,11 @@
 {
-  "name": "serenecotech",
+  "name": "sereneco",
   "owner": {
-    "name": "SerenecoTech",
+    "name": "Sereneco",
     "url": "https://github.com/serenecotech"
   },
   "metadata": {
-    "description": "Agent plugins, skills and hooks for review discipline, session continuity and security guardrails.",
+    "description": "Sereneco agent plugins, skills and hooks for review discipline, session continuity and security guardrails.",
     "version": "0.1.0"
   },
   "plugins": [
@@ -16,7 +16,7 @@
       "description": "Adversarial code, architecture and specification review using OpenAI Codex as a second hostile reviewer, with PreToolUse hooks enforcing write-path authorisation, refutation-appendix ingestion and rubric integrity.",
       "version": "0.1.0",
       "author": {
-        "name": "SerenecoTech"
+        "name": "Sereneco"
       },
       "category": "review",
       "keywords": ["review", "codex", "adversarial", "hooks"]
@@ -28,7 +28,7 @@
       "description": "Write and resume HANDOFF.md so work survives context limits, /clear and session boundaries without the user re-explaining the task.",
       "version": "0.1.0",
       "author": {
-        "name": "SerenecoTech"
+        "name": "Sereneco"
       },
       "category": "productivity",
       "keywords": ["handoff", "context", "continuity", "session"]
@@ -40,7 +40,7 @@
       "description": "Security guardrails as PreToolUse hooks: block dangerous shell commands, writes to credential files and system paths, and secrets in file content; pre-approve provably-safe rm; enforce the project's package manager; warn on destructive git operations.",
       "version": "0.1.0",
       "author": {
-        "name": "SerenecoTech"
+        "name": "Sereneco"
       },
       "category": "security",
       "keywords": ["security", "hooks", "guardrails", "secrets", "toolchain"]

@@ -3,7 +3,7 @@
   "description": "Session continuity across context limits. The handoff skill writes a HANDOFF.md capturing goal, done/not-done, failed approaches and decisions with their rationale; handoff-resume reads it, drift-checks the repo, rehydrates context and continues without the user re-explaining the task.",
   "version": "0.1.0",
   "author": {
-    "name": "SerenecoTech"
+    "name": "Sereneco"
   },
   "homepage": "https://github.com/serenecotech/agent-skills",
   "license": "MIT",
