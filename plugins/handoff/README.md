@@ -56,7 +56,7 @@ it honour the posture.
 
 ```bash
 claude plugin marketplace add serenecotech/agent-skills
-claude plugin install handoff@serenecotech
+claude plugin install handoff@sereneco
 ```
 
 Skills are available immediately; no restart needed.

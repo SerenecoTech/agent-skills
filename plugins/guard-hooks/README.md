@@ -99,7 +99,7 @@ deserve a second look at which branch you are on.
 
 ```bash
 claude plugin marketplace add serenecotech/agent-skills
-claude plugin install guard-hooks@serenecotech
+claude plugin install guard-hooks@sereneco
 ```
 
 **Hooks load at session start** — restart before expecting anything to be enforced. Then check

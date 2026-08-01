@@ -22,12 +22,15 @@ Add the marketplace once, then install whichever plugins you want:
 
 ```bash
 claude plugin marketplace add serenecotech/agent-skills
-claude plugin install adversarial-review@serenecotech
-claude plugin install handoff@serenecotech
-claude plugin install guard-hooks@serenecotech
+claude plugin install adversarial-review@sereneco
+claude plugin install handoff@sereneco
+claude plugin install guard-hooks@sereneco
 ```
 
 Or browse interactively with `/plugin` inside Claude Code.
+
+The two spellings are not a typo: `serenecotech` is the GitHub organisation, and the marketplace
+registers itself as `sereneco`.
 
 **Skills work immediately. Hooks load at session start** — so `adversarial-review` and
 `guard-hooks` need a restart before they enforce anything. After restarting, confirm
