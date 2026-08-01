@@ -1,0 +1,16 @@
+# Session memory (per-machine, not shared)
+.memsearch
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Per-review runtime state written by the adversarial-review hooks — not source
+.claude/adversarial-review/
+
+# Handoffs are working state, not repo content
+HANDOFF.md
+.claude/handoff/

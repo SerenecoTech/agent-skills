@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/write-guard.sh\"",
+            "timeout": 3,
+            "statusMessage": "Checking write target and content"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/bash-guard.sh\"",
+            "timeout": 3,
+            "statusMessage": "Checking command safety"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/toolchain-guard.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking toolchain match"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/rm-guard.sh\"",
+            "timeout": 3,
+            "statusMessage": "Checking rm target"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/git-permission.sh\"",
+            "timeout": 2,
+            "statusMessage": "Checking git operation"
+          }
+        ]
+      }
+    ]
+  }
+}
