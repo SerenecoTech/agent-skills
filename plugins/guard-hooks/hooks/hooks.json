@@ -13,6 +13,17 @@
         ]
       },
       {
+        "matcher": "Read|NotebookRead",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/read-guard.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking file for credentials"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
@@ -29,9 +40,28 @@
           },
           {
             "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/env-expansion-guard.sh\"",
+            "timeout": 3,
+            "statusMessage": "Checking credential variable use"
+          },
+          {
+            "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/rm-guard.sh\"",
             "timeout": 3,
             "statusMessage": "Checking rm target"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|NotebookRead|WebFetch|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/output-alarm.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking output for credentials"
           }
         ]
       }
