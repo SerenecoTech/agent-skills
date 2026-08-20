@@ -474,6 +474,501 @@ check "allow python3 -c open for write (not a delete)" \
 
 # =============================================================================
 echo ""
+echo -e "${YELLOW}--- Section 6: commands whose stdout IS a credential ---${NC}"
+echo ""
+
+# The incident this section was written for: `git credential fill` was run to
+# inspect which fields a helper receives. The stub helper returned nothing, git
+# fell through to the configured osxkeychain helper, and a live OAuth token with
+# org-admin and SSH-key-write scopes was printed into the transcript.
+
+check "block bare git credential fill" \
+    "$(run_guard 'git credential fill')" true
+
+check "block git credential fill fed from printf" \
+    "$(run_guard "printf 'protocol=https\nhost=github.com\n\n' | git credential fill")" true
+
+check "block git credential fill with an explicit helper but no reset" \
+    "$(run_guard 'git -c credential.helper=/tmp/my-helper credential fill')" true
+
+check "block git credential fill with useHttpPath but no reset" \
+    "$(run_guard 'git -c credential.useHttpPath=true credential fill')" true
+
+# The safe form: an empty credential.helper resets the list, so only a helper
+# named on the same command line can answer.
+check "allow git credential fill when the helper list is reset" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=/tmp/my-helper credential fill')" false
+
+check "allow git credential fill with only the reset" \
+    "$(run_guard 'git -c credential.helper= credential fill')" false
+
+# approve and reject read stdin and print nothing.
+check "allow git credential approve" \
+    "$(run_guard 'git credential approve')" false
+
+check "allow git credential reject" \
+    "$(run_guard 'git credential reject')" false
+
+# --- direct helper invocation: no helper list to reset, so no safe form ---
+check "block git credential-osxkeychain get" \
+    "$(run_guard 'git credential-osxkeychain get')" true
+
+check "block git-credential-osxkeychain get (hyphenated binary)" \
+    "$(run_guard 'git-credential-osxkeychain get')" true
+
+check "block a path-prefixed credential helper get" \
+    "$(run_guard '/usr/local/bin/git-credential-manager get')" true
+
+check "block git credential-libsecret get behind a pipe" \
+    "$(run_guard 'echo host=github.com | git credential-libsecret get')" true
+
+check "allow git credential-osxkeychain store (writes, prints nothing)" \
+    "$(run_guard 'git credential-osxkeychain store')" false
+
+check "allow git credential-osxkeychain erase" \
+    "$(run_guard 'git credential-osxkeychain erase')" false
+
+# --- CLI token printers ---
+check "block bare gh auth token" \
+    "$(run_guard 'gh auth token')" true
+
+check "block gh auth token piped into another command" \
+    "$(run_guard 'gh auth token | pbcopy')" true
+
+check "block gh auth token in a command substitution" \
+    "$(run_guard 'TOKEN=$(gh auth token)')" true
+
+check "block gh auth status --show-token" \
+    "$(run_guard 'gh auth status --show-token')" true
+
+# --- command boundaries ---
+# The first version of this section used only whitespace and shell operators as
+# boundaries, so `TOKEN=$(gh auth token)` matched nothing and was allowed. A
+# command substitution opens a command as much as a pipe does.
+check "block gh auth token in backticks" \
+    "$(run_guard 'TOKEN=`gh auth token`')" true
+
+check "block git credential fill in a command substitution" \
+    "$(run_guard 'CRED=$(git credential fill)')" true
+
+check "block git credential fill in backticks" \
+    "$(run_guard 'CRED=`git credential fill`')" true
+
+check "block a credential helper get in a command substitution" \
+    "$(run_guard 'X=$(git credential-osxkeychain get)')" true
+
+# The reset still exempts the safe form inside a substitution.
+check "allow a reset git credential fill in a command substitution" \
+    "$(run_guard 'CRED=$(git -c credential.helper= credential fill)')" false
+
+# Redirecting to a file keeps the value out of stdout, which is the whole point.
+check "allow gh auth token redirected to a file" \
+    "$(run_guard 'gh auth token > /tmp/token-file')" false
+
+check "allow gh auth token appended to a file" \
+    "$(run_guard 'gh auth token >> /tmp/tokens')" false
+
+check "allow gh auth status without --show-token" \
+    "$(run_guard 'gh auth status')" false
+
+# --- must not over-reach ---
+check "allow a grep for the phrase" \
+    "$(run_guard 'grep -rn "credential fill" docs/')" false
+
+check "allow git status" \
+    "$(run_guard 'git status')" false
+
+check "allow gh pr view" \
+    "$(run_guard 'gh pr view 42 --json title')" false
+
+# =============================================================================
+echo ""
+echo -e "${YELLOW}--- Section 6b: the exemptions are not loopholes ---${NC}"
+echo ""
+
+# Every case below was allowed by the first version of Section 6 while still
+# printing a live token to stdout. An adversarial review found them by running
+# strings through the guard rather than reading the regexes.
+
+# --- the redirect exemption belongs to one stream of one command -------------
+# `2>` is stderr. stdout still prints, so the token still reaches the transcript.
+check "block gh auth token with stderr sent to /dev/null" \
+    "$(run_guard 'gh auth token 2>/dev/null')" true
+
+check "block gh auth token with a spaced stderr redirect" \
+    "$(run_guard 'gh auth token 2> /dev/null')" true
+
+check "block gh auth status --show-token with stderr redirected" \
+    "$(run_guard 'gh auth status --show-token 2>/dev/null')" true
+
+check "block gh auth token piped onward with stderr redirected" \
+    "$(run_guard 'gh auth token | pbcopy 2>/dev/null')" true
+
+# A redirect attached to a different command in the line protects nothing.
+check "block gh auth token when the redirect belongs to an earlier command" \
+    "$(run_guard 'echo hi > /tmp/f; gh auth token')" true
+
+check "block gh auth token when the redirect belongs to a later command" \
+    "$(run_guard 'gh auth token; echo done > /tmp/f')" true
+
+check "block gh auth token after a redirected command joined with &&" \
+    "$(run_guard 'gh auth status > /tmp/s && gh auth token')" true
+
+check "block git credential fill after a redirected command" \
+    "$(run_guard 'git rev-parse HEAD > /tmp/sha; git credential fill')" true
+
+# A redirect target that is a terminal or a std stream is still the transcript.
+check "block gh auth token redirected to /dev/stdout" \
+    "$(run_guard 'gh auth token > /dev/stdout')" true
+
+check "block gh auth token redirected to /dev/stderr" \
+    "$(run_guard 'gh auth token > /dev/stderr')" true
+
+check "block gh auth token redirected to /dev/tty" \
+    "$(run_guard 'gh auth token > /dev/tty')" true
+
+check "block gh auth token redirected to /dev/fd/1" \
+    "$(run_guard 'gh auth token > /dev/fd/1')" true
+
+# The genuine article still works, including alongside a stderr redirect.
+check "allow gh auth token with stdout to a file and stderr to /dev/null" \
+    "$(run_guard 'gh auth token 2>/dev/null > /tmp/token-file')" false
+
+check "allow gh auth token discarded to /dev/null" \
+    "$(run_guard 'gh auth token > /dev/null')" false
+
+# --- a leading backslash only suppresses an alias ---------------------------
+check "block \\gh auth token" \
+    "$(run_guard '\gh auth token')" true
+
+check "block \\git credential fill" \
+    "$(run_guard '\git credential fill')" true
+
+check "block \\git credential-osxkeychain get" \
+    "$(run_guard '\git credential-osxkeychain get')" true
+
+# --- quotes around a word change nothing about what runs --------------------
+check "block gh auth \"token\"" \
+    "$(run_guard 'gh auth "token"')" true
+
+check "block gh \"auth\" token" \
+    "$(run_guard 'gh "auth" token')" true
+
+check "block git \"credential\" fill" \
+    "$(run_guard 'git "credential" fill')" true
+
+check "block git credential \"fill\"" \
+    "$(run_guard 'git credential "fill"')" true
+
+check "block git credential-osxkeychain \"get\"" \
+    "$(run_guard 'git credential-osxkeychain "get"')" true
+
+# Quote tolerance must not swallow a quoted phrase inside another command.
+check "allow a grep for the phrase including the word git" \
+    "$(run_guard 'grep -rn "git credential fill" docs/')" false
+
+# --- resetting the helper list only helps if a helper you wrote is re-added --
+# The reset clears the list; naming the real store afterwards puts it straight
+# back, and `fill` prints the live token the reset was supposed to prevent.
+check "block a reset that re-adds osxkeychain" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=osxkeychain credential fill')" true
+
+check "block a reset that re-adds manager" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=manager credential fill')" true
+
+check "block a reset that re-adds store" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=store credential fill')" true
+
+# A `!…` value is an arbitrary shell snippet, which can call the real store.
+check "block a reset that re-adds a shell-snippet helper" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper="!git credential-osxkeychain get" credential fill')" true
+
+# A path is a helper the caller wrote, which is the documented safe form.
+check "allow a reset that re-adds a relative-path helper" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=./my-helper credential fill')" false
+
+check "allow a reset that re-adds a home-relative path helper" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=~/bin/my-helper credential fill')" false
+
+# --- the reset has ordinary quoting variants, and they are the same reset ----
+check "allow a double-quoted empty helper reset" \
+    "$(run_guard 'git -c credential.helper="" credential fill')" false
+
+check "allow a single-quoted empty helper reset" \
+    "$(run_guard "git -c credential.helper='' credential fill")" false
+
+check "allow a reset with the whole pair quoted" \
+    "$(run_guard 'git -c "credential.helper=" credential fill')" false
+
+# =============================================================================
+echo ""
+echo -e "${YELLOW}--- Section 6c: second adversarial pass ---${NC}"
+echo ""
+
+# A second hostile review of the fixed code found nine more. Every case here was
+# allowed while still printing a live credential, or denied while printing none.
+
+# --- the short spelling of a blocked flag is the same flag -------------------
+# gh's own help: `-t, --show-token   Display the auth token`.
+check "block gh auth status -t" \
+    "$(run_guard 'gh auth status -t')" true
+
+check "block gh auth status -a -t" \
+    "$(run_guard 'gh auth status -a -t')" true
+
+check "block gh auth status -t with a hostname" \
+    "$(run_guard 'gh auth status -t --hostname github.com')" true
+
+check "allow gh auth status -h (no token flag)" \
+    "$(run_guard 'gh auth status -h github.com')" false
+
+check "allow gh auth status --hostname" \
+    "$(run_guard 'gh auth status --hostname github.com')" false
+
+# --- an absolute path is how you name the same binary ------------------------
+check "block a path-prefixed gh auth token" \
+    "$(run_guard '/opt/homebrew/bin/gh auth token')" true
+
+check "block a path-prefixed git credential fill" \
+    "$(run_guard '/usr/local/bin/git credential fill')" true
+
+# --- the system stores are themselves executables at paths -------------------
+# "named by a path" cannot mean "written by you": osxkeychain, store, cache and
+# netrc all ship as git-credential-* binaries under git's exec-path.
+check "block a reset that re-adds osxkeychain by its path" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=/opt/homebrew/opt/git/libexec/git-core/git-credential-osxkeychain credential fill')" true
+
+check "block a reset that re-adds the store helper by its path" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=/usr/lib/git-core/git-credential-store credential fill')" true
+
+check "allow a reset that re-adds a helper of your own by path" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper=/tmp/my-own-helper credential fill')" false
+
+# --- other config forms re-arm the list after the reset ----------------------
+# Verified against git 2.55 with a stub helper: each of these is consulted even
+# though the empty `credential.helper=` came first.
+check "block a reset undone by a URL-scoped helper" \
+    "$(run_guard 'git -c credential.helper= -c credential.https://github.com.helper=osxkeychain credential fill')" true
+
+check "block a reset undone by --config-env" \
+    "$(run_guard 'git -c credential.helper= --config-env=credential.helper=HVAR credential fill')" true
+
+check "block a reset undone by an included config file" \
+    "$(run_guard 'git -c credential.helper= -c include.path=/Users/someone/.gitconfig credential fill')" true
+
+# --- a redirect on the first occurrence is not a redirect on the second ------
+check "block a second unredirected gh auth token on the same line" \
+    "$(run_guard 'gh auth token > /tmp/t; gh auth token')" true
+
+check "block a second unredirected gh auth token joined with &&" \
+    "$(run_guard 'gh auth token >/tmp/t && gh auth token')" true
+
+# --- a lone & separates commands too ----------------------------------------
+check "block gh auth token backgrounded beside a redirected command" \
+    "$(run_guard 'gh auth token & echo done > /tmp/f')" true
+
+check "block gh auth token after a backgrounded redirected command" \
+    "$(run_guard 'echo x > /tmp/f & gh auth token')" true
+
+# A redirect inside a command substitution belongs to the inner command.
+check "block gh auth token with a redirect only inside a substitution" \
+    "$(run_guard 'gh auth token $(: > /tmp/f)')" true
+
+# --- descriptors other than 1 are not stdout, whatever their digits ---------
+check "block gh auth token with fd 0 redirected" \
+    "$(run_guard 'gh auth token 0>/dev/null')" true
+
+check "block gh auth token with fd 12 redirected" \
+    "$(run_guard 'gh auth token 12>/tmp/e')" true
+
+# --- writing about the command is not running it -----------------------------
+# A quoted phrase belongs to whatever command owns the quotes. Denying these
+# means the commit message for this very section cannot be typed.
+check "allow a commit message naming git credential fill" \
+    "$(run_guard 'git commit -m "guard: block git credential fill"')" false
+
+check "allow a commit message naming gh auth token" \
+    "$(run_guard 'git commit -m "docs: explain gh auth token"')" false
+
+check "allow echoing a sentence about the command" \
+    "$(run_guard 'echo "run gh auth token to print it"')" false
+
+check "allow an issue title naming the command" \
+    "$(run_guard 'gh issue create --title "gh auth token leaks" --body x')" false
+
+check "allow a log search for the phrase" \
+    "$(run_guard 'git log --grep="gh auth token"')" false
+
+# A single quoted word is still the word: this is quoting, not prose.
+check "block gh auth \"token\" (still)" \
+    "$(run_guard 'gh auth "token"')" true
+
+# --- redirect spellings that do keep the value off the transcript ------------
+check "allow gh auth token with a noclobber-override redirect" \
+    "$(run_guard 'gh auth token >| /tmp/f')" false
+
+check "allow gh auth token inside a redirected group" \
+    "$(run_guard '{ gh auth token; } > /tmp/f')" false
+
+check "allow gh auth token inside a redirected subshell" \
+    "$(run_guard '(gh auth token) > /tmp/f')" false
+
+# =============================================================================
+echo ""
+echo -e "${YELLOW}--- Section 6d: third adversarial pass ---${NC}"
+echo ""
+
+# --- a command substitution is a command, wherever it is written -------------
+# Ignoring quoted prose is what lets a commit message name these commands. A
+# `$(…)` inside those quotes is not prose: the shell runs it and prints the
+# result. Substitution bodies are matched in their own right for that reason.
+check "block gh auth token inside a quoted command substitution" \
+    "$(run_guard 'echo "$(gh auth token)"')" true
+
+check "block git credential fill inside a quoted command substitution" \
+    "$(run_guard 'echo "$(git credential fill)"')" true
+
+check "block a helper get inside a quoted command substitution" \
+    "$(run_guard 'echo "$(git credential-osxkeychain get)"')" true
+
+check "block gh auth token in quoted backticks" \
+    "$(run_guard 'echo "`gh auth token`"')" true
+
+check "block gh auth token substituted into a jq argument" \
+    "$(run_guard 'jq -n --arg t "$(gh auth token)" "{t:\$t}"')" true
+
+# --- the reset protects the command it is on, not the whole line -------------
+check "block a bare fill following a reset fill" \
+    "$(run_guard 'git -c credential.helper= credential fill; git credential fill')" true
+
+check "block a bare fill joined to a reset fill with &&" \
+    "$(run_guard 'git -c credential.helper= credential fill && git credential fill')" true
+
+check "block a bare fill preceding a reset fill" \
+    "$(run_guard 'git credential fill | tee /tmp/x; git -c credential.helper= credential fill')" true
+
+# A reset inside a comment is not a reset at all.
+check "block a fill whose reset is inside a shell comment" \
+    "$(run_guard 'git credential fill #-c credential.helper=')" true
+
+# --- --show-token needs the same command boundary as everything else --------
+check "block gh auth status --show-token in a command substitution" \
+    "$(run_guard 'TOK=$(gh auth status --show-token)')" true
+
+check "block gh auth status --show-token piped without a space" \
+    "$(run_guard 'gh auth status --show-token|pbcopy')" true
+
+check "block gh auth status -t followed by a semicolon" \
+    "$(run_guard 'gh auth status -t;true')" true
+
+check "block gh auth status --show-token in backticks" \
+    "$(run_guard 'echo `gh auth status --show-token`')" true
+
+# --- short flags cluster in either order ------------------------------------
+# pflag decomposes left to right: `-tz` reports z unknown, so t was consumed.
+check "block gh auth status -ta (t first in the cluster)" \
+    "$(run_guard 'gh auth status -ta')" true
+
+check "allow gh auth status -a (no token flag in the cluster)" \
+    "$(run_guard 'gh auth status -a')" false
+
+# --- a quoted redirect target is the same target -----------------------------
+check "block gh auth token redirected to a quoted /dev/stdout" \
+    "$(run_guard 'gh auth token > "/dev/stdout"')" true
+
+check "block gh auth token redirected to a single-quoted /dev/stdout" \
+    "$(run_guard "gh auth token > '/dev/stdout'")" true
+
+check "block gh auth token redirected to a quoted /dev/tty" \
+    "$(run_guard 'gh auth token > "/dev/tty"')" true
+
+check "block gh auth token redirected to /dev/./stdout" \
+    "$(run_guard 'gh auth token > /dev/./stdout')" true
+
+check "allow gh auth token redirected to a quoted ordinary file" \
+    "$(run_guard 'gh auth token > "/tmp/my token file"')" false
+
+# --- a separator inside quotes is data --------------------------------------
+# The `;` in a shell-function helper value must not split the command, or
+# `git … credential fill` lands across two segments and matches neither.
+check "block a reset re-adding a shell-function helper containing a semicolon" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper="!f(){ echo password=x; };f" credential fill')" true
+
+check "block a fill whose earlier argument quotes a pipe" \
+    "$(run_guard 'git -c credential.helper= -c credential.helper="!f(){ x|y; };f" credential fill')" true
+
+# --- prose spans lines ------------------------------------------------------
+# A commit body is the multi-line form of the message the guard must not block.
+check "allow a multi-line commit message naming the command" \
+    "$(run_guard 'git commit -m "guard: block gh auth token
+
+Section 6 denies it."')" false
+
+# =============================================================================
+echo ""
+echo -e "${YELLOW}--- Section 6e: fourth adversarial pass ---${NC}"
+echo ""
+
+# --- the binary's own name can be quoted too ---------------------------------
+# `"echo" x` runs echo. Quote tolerance covered the second and third words and
+# left the first one open, which defeated every check in the section at once.
+check "block a quoted gh" \
+    "$(run_guard '"gh" auth token')" true
+
+check "block a single-quoted gh" \
+    "$(run_guard "'gh' auth token")" true
+
+check "block gh behind an empty quote pair" \
+    "$(run_guard '""gh auth token')" true
+
+check "block a quoted git before credential fill" \
+    "$(run_guard '"git" credential fill')" true
+
+check "block a quoted git before a helper get" \
+    "$(run_guard '"git" credential-osxkeychain get')" true
+
+check "block a quoted git-credential helper" \
+    "$(run_guard "'git-credential-osxkeychain' get")" true
+
+# --- a substitution body can contain its own parens --------------------------
+check "block a substitution whose body quotes a closing paren" \
+    "$(run_guard 'echo "$(echo '"'"')'"'"' ; gh auth token)"')" true
+
+check "block a substitution containing a function definition" \
+    "$(run_guard 'echo "$(f() { gh auth token; }; f)"')" true
+
+# --- backgrounding is backgrounding whatever precedes the & ------------------
+check "block gh auth token after a background job whose file ends in a digit" \
+    "$(run_guard 'echo x > /tmp/f2& gh auth token')" true
+
+check "block a second gh auth token after a backgrounded first" \
+    "$(run_guard 'gh auth token >/tmp/t1& gh auth token')" true
+
+check "block gh auth token after a backgrounded redirect, no space" \
+    "$(run_guard 'echo x > /tmp/f2&gh auth token')" true
+
+# --- an escaped quote is a literal, not a quote ------------------------------
+# Counting raw quote bytes leaves an odd count stuck "inside quotes", which
+# masks every real separator after it and merges the whole line into one segment.
+check "block gh auth token after a command containing an escaped quote" \
+    "$(run_guard 'echo "a\"b" > /tmp/f; gh auth token')" true
+
+check "block gh auth token after a sed script containing an escaped quote" \
+    "$(run_guard 'sed -i "s/\"/x/g" a.txt > /tmp/o; gh auth token')" true
+
+check "block a bare fill after an escaped quote and a reset fill" \
+    "$(run_guard 'echo "a\"b"; git -c credential.helper= credential fill; git credential fill')" true
+
+# Balanced quotes in prose still read as prose.
+check "allow a commit message containing escaped quotes" \
+    "$(run_guard 'git commit -m "say \"hi\" to the guard"')" false
+
+# --- the mask bytes are internal and must not be supplied from outside -------
+check "block gh auth token carrying a literal mask byte" \
+    "$(run_guard "$(printf 'gh auth token\002')")" true
+
+# =============================================================================
+echo ""
 echo "========================================"
 echo "Results: ${pass} passed, ${fail} failed"
 echo "========================================"
