@@ -1,0 +1,83 @@
+name: Release a plugin
+
+# Tags one plugin at the version its manifests already declare.
+#
+# The version is NOT chosen here. Bump it in the plugin's own manifest and in
+# the marketplace entry, merge that, then run this to tag it. Every marketplace
+# surveyed before writing this does the same — a human names the version and CI
+# tags it — so this deliberately does not derive versions from commit messages.
+#
+# `claude plugin tag` refuses to tag when plugin.json and the enclosing
+# marketplace entry disagree, which is the failure mode worth automating away.
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: 'Plugin directory name (adversarial-review, guard-hooks, handoff)'
+        required: true
+        type: choice
+        options:
+          - adversarial-review
+          - guard-hooks
+          - handoff
+      dry_run:
+        description: 'Print what would be tagged and stop'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Guard suites must be green before anything is tagged
+        run: bash plugins/guard-hooks/tests/run-all.sh
+
+      - name: Validate the manifest being released
+        run: |
+          claude plugin validate "plugins/${{ inputs.plugin }}" --strict
+          claude plugin validate . --strict
+
+      - name: Refuse to tag a version-less plugin
+        # A plugin with no version is keyed on commit SHA and always tracks HEAD.
+        # There is nothing to tag, and tagging would imply a pin that does not exist.
+        run: |
+          if ! jq -e '.version' "plugins/${{ inputs.plugin }}/.claude-plugin/plugin.json" >/dev/null; then
+            echo "::error::${{ inputs.plugin }} declares no version, so it already tracks HEAD. Nothing to release."
+            exit 1
+          fi
+
+      - name: Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            claude plugin tag "plugins/${{ inputs.plugin }}" --dry-run
+          else
+            claude plugin tag "plugins/${{ inputs.plugin }}" \
+              --push --remote origin -m "${{ inputs.plugin }} %s"
+          fi
+
+      - name: Summarise
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          v=$(jq -r .version "plugins/${{ inputs.plugin }}/.claude-plugin/plugin.json")
+          {
+            echo "### Released \`${{ inputs.plugin }}\` $v"
+            echo
+            echo "Tag \`${{ inputs.plugin }}--v$v\` pushed to origin."
+            echo
+            echo "Installed copies pick this up on \`/plugin update\`; the cache is keyed"
+            echo "by version, so an unchanged version fetches nothing."
+          } >> "$GITHUB_STEP_SUMMARY"
