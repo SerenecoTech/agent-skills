@@ -1,0 +1,128 @@
+name: CI
+
+# Four checks, in rough order of how often each has actually caught something:
+#   tests           the guard suites — the reason to trust the hooks at all
+#   version bump    a plugin changed without its version moving, which silently
+#                   prevents `/plugin update` from ever fetching it
+#   manifests       claude plugin validate --strict, plus plugin/marketplace agreement
+#   plugin loads    installs from this checkout and asserts it enables, which
+#                   catches load-layer breakage that validation misses
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: guard test suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run every guard suite
+        run: bash plugins/guard-hooks/tests/run-all.sh
+
+      - name: Shellcheck the hooks
+        # shellcheck is preinstalled on the GitHub runner images.
+        # SC1091: the shared library is sourced via a path shellcheck cannot follow.
+        run: |
+          shellcheck -S warning -e SC1091 \
+            plugins/guard-hooks/hooks/*.sh \
+            plugins/guard-hooks/hooks/lib/*.sh \
+            .github/scripts/*.sh
+
+      - name: Syntax-check the test suites
+        run: for f in plugins/guard-hooks/tests/*.sh; do bash -n "$f"; done
+
+  version-bump:
+    name: version bumped when a plugin changed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine the base to compare against
+        id: base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check
+        run: bash .github/scripts/check-version-bump.sh "${{ steps.base.outputs.ref }}"
+
+  manifests:
+    name: manifests validate and agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate the marketplace
+        run: claude plugin validate . --strict
+
+      - name: Validate every plugin
+        run: |
+          for d in plugins/*/; do
+            echo "::group::$(basename "$d")"
+            claude plugin validate "$d" --strict
+            echo "::endgroup::"
+          done
+
+      - name: Plugin and marketplace versions agree
+        # `claude plugin tag --dry-run` validates that plugin.json and the
+        # enclosing marketplace entry match, and creates nothing.
+        run: |
+          for d in plugins/*/; do
+            if jq -e '.version' "$d/.claude-plugin/plugin.json" >/dev/null; then
+              claude plugin tag "$d" --dry-run
+            else
+              echo "$(basename "$d"): version-less, tracks commit SHA — nothing to tag"
+            fi
+          done
+
+  loads:
+    name: plugins load in Claude Code
+    runs-on: ubuntu-latest
+    # Validation checks the manifest's shape; only an install proves the plugin
+    # reaches "enabled". Borrowed from the i-have-adhd marketplace, which added
+    # this after a duplicate hooks declaration passed validation and broke loading.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install each plugin into a scratch config and assert it enables
+        run: |
+          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-scratch"
+          mkdir -p "$CLAUDE_CONFIG_DIR"
+          claude plugin marketplace add "$GITHUB_WORKSPACE"
+          for d in plugins/*/; do
+            name=$(jq -r .name "$d/.claude-plugin/plugin.json")
+            claude plugin install "$name@sereneco"
+          done
+          claude plugin list | tee plugin-list.txt
+          # Assert the Status line for each plugin, not just that the name is
+          # present — an installed-but-disabled plugin still prints its name.
+          for d in plugins/*/; do
+            name=$(jq -r .name "$d/.claude-plugin/plugin.json")
+            st=$(awk -v n="$name@sereneco" \
+                   'index($0, n){f=1; next} f && /Status:/{print; exit}' plugin-list.txt)
+            case "$st" in
+              *enabled*) echo "  $name: enabled" ;;
+              *)
+                echo "::error::$name did not reach enabled (status: ${st:-none})"
+                exit 1
+                ;;
+            esac
+          done
