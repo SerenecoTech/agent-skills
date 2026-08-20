@@ -34,7 +34,11 @@ test_rm_guard() {
     json_input=$(jq -n --arg c "$command" '{tool_input: {command: $c}}')
 
     local result got="fallthrough"
-    result=$(echo "$json_input" | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" bash "$HOOK" 2>/dev/null || true)
+    # HOME points at a fixture, not the developer's. The hook reads
+    # $HOME/.claude/settings.json at runtime, so without this the suite's
+    # results depend on whatever the person running it happens to have allowed.
+    result=$(echo "$json_input" \
+        | CLAUDE_PROJECT_DIR="$PROJECT_ROOT" HOME="$FAKE_HOME" bash "$HOOK" 2>/dev/null || true)
     if echo "$result" | jq -e '.hookSpecificOutput.permissionDecision == "allow"' >/dev/null 2>&1; then
         got="allow"
     fi
@@ -83,17 +87,38 @@ cat > "$PROJECT_ROOT/.claude/settings.local.json" <<'JSON'
 }
 JSON
 
-cd "$PROJECT_ROOT"
+# A fixture HOME, so the user-global settings layer is ours rather than the
+# machine's. The two compound cases below exist to prove the hook reads
+# user-global settings at all; pointing them at the developer's real
+# ~/.claude/settings.json made them pass on one laptop and fail everywhere else,
+# CI included.
+FAKE_HOME=$(mktemp -d /tmp/rmguard-home.XXXXXX)
+mkdir -p "$FAKE_HOME/.claude"
+# Both pattern shapes, because a real settings file carries both and they match
+# different things: `Bash(git status)` is an exact match, `Bash(git status *)`
+# needs at least one argument after it. A fixture with only the glob form fails
+# on a bare `git status`, which is how this suite's dependency on the machine's
+# own settings first showed up.
+cat > "$FAKE_HOME/.claude/settings.json" <<'JSON'
+{
+  "permissions": {
+    "allow": ["Bash(git status)", "Bash(git status *)", "Bash(grep *)"]
+  }
+}
+JSON
+
+cd "$PROJECT_ROOT" || exit 1
 
 cleanup() {
     cd /
-    \rm -rf "$PROJECT_ROOT" "$ESCAPE_DIR"
+    \rm -rf "$PROJECT_ROOT" "$ESCAPE_DIR" "$FAKE_HOME"
 }
 trap cleanup EXIT
 
 echo "Testing rm-guard Hook..."
 echo "  PROJECT_ROOT: $PROJECT_ROOT"
 echo "  ESCAPE_DIR:   $ESCAPE_DIR"
+echo "  FAKE_HOME:    $FAKE_HOME"
 echo
 
 # -----------------------------------------------------------------------------
@@ -140,10 +165,11 @@ echo
 
 # -----------------------------------------------------------------------------
 # Compound commands the hook SHOULD approve. Non-rm siblings here are either
-# inert builtins (cd, echo, ls, cat, pwd) or match a pattern that lives in the
-# real ~/.claude/settings.json allow list (e.g. `Bash(git status *)`,
-# `Bash(grep *)`, `Bash(find *)`). The hook reads that real settings file at
-# runtime, so these expectations track whatever the user has configured.
+# inert builtins (cd, echo, ls, cat, pwd) or match an allow pattern from one of
+# the fixture settings files — `Bash(git status *)` and `Bash(grep *)` from the
+# fixture HOME, `Bash(__projonly_cmd *)` from the fixture project. Between them
+# they cover both settings layers the hook reads, without depending on anything
+# outside this suite.
 # -----------------------------------------------------------------------------
 echo "=== Compound: AUTO-APPROVE (rm + safe siblings) ==="
 test_rm_guard "rm && rm"                    "rm file.txt && rm other.txt"        allow
@@ -152,8 +178,8 @@ test_rm_guard "cd && rm"                    "cd sub && rm nested.txt"           
 test_rm_guard "rm && echo"                  "rm file.txt && echo done"           allow
 test_rm_guard "rm | cat (pipe)"             "rm file.txt | cat"                  allow
 test_rm_guard "rm || true"                  "rm file.txt || true"                allow
-test_rm_guard "rm + git status (settings)"  "rm file.txt && git status"          allow
-test_rm_guard "rm + grep (settings)"        "rm file.txt && grep foo file.txt"   allow
+test_rm_guard "rm + git status (global settings)" "rm file.txt && git status"     allow
+test_rm_guard "rm + grep (global settings)" "rm file.txt && grep foo file.txt"   allow
 test_rm_guard "rm + ls (inert)"             "ls sub && rm file.txt"              allow
 test_rm_guard "rm + project-local allow"    "rm file.txt && __projonly_cmd run"  allow
 
