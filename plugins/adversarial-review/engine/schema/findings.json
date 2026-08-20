@@ -4,7 +4,13 @@
   "description": "Passed to every codex call via --output-schema. Prose output is never parsed.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["reviewed_path", "probe_echo", "probes_run", "findings"],
+  "required": [
+    "reviewed_path",
+    "probe_echo",
+    "probes_run",
+    "findings",
+    "no_findings_reason"
+  ],
   "properties": {
     "reviewed_path": {
       "type": "string",
@@ -33,7 +39,15 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "probe_id", "severity", "claim", "scenario", "citation", "falsifier"],
+        "required": [
+          "id",
+          "probe_id",
+          "severity",
+          "claim",
+          "scenario",
+          "citation",
+          "falsifier"
+        ],
         "properties": {
           "id": {
             "type": "string",
@@ -76,8 +90,8 @@
       }
     },
     "no_findings_reason": {
-      "type": "string",
-      "description": "If findings is empty, why. A thin honest round is more useful than a padded one."
+      "type": ["string", "null"],
+      "description": "If findings is empty, why. A thin honest round is more useful than a padded one. Null when findings is non-empty. This field is listed in `required` and made nullable here rather than omitted from `required`: the validator rejects any schema whose `required` omits a declared property, and a rejected schema means the call falls back to prose while still looking successful."
     }
   }
 }

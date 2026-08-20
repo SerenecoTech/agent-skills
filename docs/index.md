@@ -22,4 +22,4 @@ not exist yet. They are created when their first record does, not in advance.
 | Record                                                                          | Status     | Subject                                                               |
 | ------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------- |
 | [`ISSUE-002`](issues/2026-08-17-credential-printing-commands-were-unguarded.md) | `resolved` | Commands whose stdout is a credential were unguarded                  |
-| [`ISSUE-001`](issues/2026-08-16-adversarial-review-schema-rejected.md)          | `open`     | The `adversarial-review` findings schema is rejected by the Codex CLI |
+| [`ISSUE-001`](issues/2026-08-16-adversarial-review-schema-rejected.md)          | `resolved` | The `adversarial-review` findings schema is rejected by the Codex CLI |

@@ -58,6 +58,13 @@ against real truncation logs once this has run on real targets.
 
 ## Preferred invocation
 
-Use the native `codex exec review --uncommitted | --base <branch> | --commit <sha>`. It
-resolves the target itself, and `--uncommitted` includes untracked files — a hand-written
-"staged and unstaged" description omits them, so a brand-new source file gets no review.
+The native `codex exec review` resolves the target itself, and `--uncommitted` includes
+untracked files — a hand-written "staged and unstaged" description omits them, so a brand-new
+source file gets no review.
+
+But a target flag and a prompt cannot be passed together, and the engine requires a per-round
+brief. So the brief wins: pass it on stdin with **no** target flag and name the target in the
+brief itself, or use the general `codex exec` form and have the reviewer run `git status` and
+`git diff` for itself. Either way, state in the brief that untracked files are in scope —
+that is the one thing `--uncommitted` was buying, and describing the target by hand is exactly
+where it gets dropped. See `invocation.md` for the measured command lines.

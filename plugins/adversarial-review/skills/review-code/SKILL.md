@@ -21,9 +21,9 @@ Interpret the argument naturally, then hand the engine a target:
 
 | Argument looks like | Target |
 |---|---|
-| nothing | uncommitted changes — `codex exec review --uncommitted` |
-| a branch name (`git rev-parse` resolves it) | `codex exec review --base <branch>` |
-| a commit SHA | `codex exec review --commit <sha>` |
+| nothing | uncommitted changes, untracked files included |
+| a branch name (`git rev-parse` resolves it) | changes against that base |
+| a commit SHA | the changes that commit introduced |
 | a PR number or GitHub URL | verify with `gh pr view <n> --json number`, then review the checked-out branch |
 | file paths that exist | those files |
 
@@ -31,6 +31,11 @@ If a token resolves to none of these, say so rather than guessing:
 `Could not resolve '<token>': not a file, directory, branch, commit SHA, or PR number.`
 
 For uncommitted targets, check `git status` first — if there is nothing, say so and stop.
+
+**Name the target in the brief, not in a flag.** `codex exec review` refuses a target flag and
+a prompt together, and the engine requires a per-round brief, so the target has to be described
+in the brief itself — including that untracked files are in scope. `invocation.md` has the
+measured command lines.
 
 ## Then
 
