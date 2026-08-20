@@ -11,8 +11,16 @@
 
 set -euo pipefail
 
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
+
 # Fail-closed: if anything errors, deny by default
 trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Hook error - fail-closed\"}}"; exit 0' ERR
+
+# The secret patterns are shared with read-guard and output-alarm. They used to
+# live inline here, which meant the gh prefixes were fixed in one place and not
+# the others.
+# shellcheck source=lib/secret-patterns.sh
+. "$LIB_DIR/secret-patterns.sh"
 
 # Read stdin JSON
 input=$(cat)
@@ -126,72 +134,14 @@ content=$(echo "$input" | jq -r '(.tool_input.content // "") + (.tool_input.new_
 
 if [ -n "$content" ]; then
     # Skip secret detection for test/mock files
-    if [ -n "$file_path" ] && echo "$file_path" | grep -qE '(test|mock|fixture|example|\.spec\.|\.test\.)'; then
+    if [ -n "$file_path" ] && secret_path_is_exempt "$file_path"; then
         # Test files often contain fake secrets - skip secret detection
         exit 0
     fi
 
-    # High-confidence secret patterns
-    secret_patterns=(
-        # AWS credentials
-        'AKIA[0-9A-Z]{16}'
-        'aws_secret_access_key[[:space:]]*[:=][[:space:]]*[A-Za-z0-9/+=]{40}'
-
-        # Anthropic API keys
-        'sk-ant-api[0-9]{2}-[a-zA-Z0-9_-]{95,}'
-
-        # OpenAI API keys
-        'sk-[a-zA-Z0-9]{32,}'
-        'sk-proj-[a-zA-Z0-9_-]{32,}'
-
-        # GitHub tokens
-        'gh[ps]_[a-zA-Z0-9]{36,}'
-        'github_pat_[a-zA-Z0-9_]{82}'
-
-        # GitLab tokens
-        'glpat-[a-zA-Z0-9_-]{20,}'
-
-        # Slack tokens
-        'xox[baprs]-[a-zA-Z0-9-]+'
-
-        # Discord tokens
-        '[MN][A-Za-z0-9]{23}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}'
-
-        # Google Cloud service accounts
-        '"type"[[:space:]]*:[[:space:]]*"service_account"'
-        '"private_key"[[:space:]]*:[[:space:]]*"-----BEGIN PRIVATE KEY-----'
-
-        # Azure connection strings
-        'DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[A-Za-z0-9+/=]{88}'
-
-        # Private keys (PEM format) — use [B] prefix to avoid grep treating --- as a flag
-        'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
-
-        # JWT tokens (high entropy base64 with . separators)
-        'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'
-
-        # Stripe keys
-        'sk_live_[a-zA-Z0-9]{24,}'
-        'rk_live_[a-zA-Z0-9]{24,}'
-
-        # SendGrid API keys
-        'SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}'
-
-        # Twilio API keys
-        'SK[a-z0-9]{32}'
-
-        # NPM tokens
-        'npm_[a-zA-Z0-9]{36}'
-
-        # PyPI tokens
-        'pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{70,}'
-
-        # Database connection strings with passwords
-        '(postgres|mysql|mongodb(\+srv)?):\/\/[^:]+:[^@]{8,}@'
-
-        # Generic high-entropy strings in suspicious contexts
-        '(api_?key|api_?secret|access_?token|secret_?key|private_?key|password)[[:space:]]*[:=][[:space:]]*["'"'"']?[a-zA-Z0-9_+=/-]{32,}["'"'"']?'
-    )
+    # Patterns come from lib/secret-patterns.sh, shared with read-guard and
+    # output-alarm. Both tiers apply here: a denied write is cheap to retry.
+    secret_patterns=("${SECRET_PATTERNS_STRICT[@]}" "${SECRET_PATTERNS_CONTEXTUAL[@]}")
 
     for pattern in "${secret_patterns[@]}"; do
         if echo "$content" | grep -qE "$pattern"; then
