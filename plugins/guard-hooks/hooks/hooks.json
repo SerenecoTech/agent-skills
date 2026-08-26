@@ -49,6 +49,12 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/rm-guard.sh\"",
             "timeout": 3,
             "statusMessage": "Checking rm target"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/github-guard.sh\"",
+            "timeout": 15,
+            "statusMessage": "Checking GitHub merge and branch safety"
           }
         ]
       }
@@ -75,6 +81,12 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/git-permission.sh\"",
             "timeout": 2,
             "statusMessage": "Checking git operation"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/github-guard.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking branch deletion policy"
           }
         ]
       }
