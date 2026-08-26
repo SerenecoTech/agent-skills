@@ -182,7 +182,10 @@ run_hook() {
     local json_input
     json_input=$(jq -n --arg c "$cmd" --arg e "$event" \
         '{hook_event_name:$e, tool_input:{command:$c}}')
-    env -C "$cwd" -u GUARD_GITHUB_DISABLE -u GUARD_BRANCH_PREFIXES \
+    # Every GUARD_* variable is cleared first, so the suite's results do not
+    # depend on what the person running it happens to have exported.
+    env -C "$cwd" \
+        -u GUARD_GITHUB_DISABLE -u GUARD_BRANCH_PREFIXES -u GUARD_PROTECTED_BRANCHES \
         PATH="$FIXTURE_BIN:$PATH" "$@" bash "$HOOK" <<<"$json_input" 2>/dev/null || echo ""
 }
 
@@ -313,6 +316,36 @@ else
     echo -e "    expected deny, got $(decision_of "$result")"
     fail=$((fail + 1))
 fi
+
+# -----------------------------------------------------------------------------
+echo ""
+echo "R3 — deleting a protected branch"
+# -----------------------------------------------------------------------------
+# The case this rule exists for: a default branch is trivially an ancestor of
+# itself, so the merged-branch exemption waved `git branch -D main` straight
+# through until R3 was placed ahead of it.
+check PreToolUse deny "git branch -D main" \
+    "git branch -D main" "$REPO" GH_FIXTURE=green
+check_reason PreToolUse "protected branch" "the reason says why" \
+    "git branch -D main" "$REPO" GH_FIXTURE=green
+check PreToolUse deny "master is protected even where it is not the default" \
+    "git branch -D master" "$REPO" GH_FIXTURE=green
+check PreToolUse deny "develop is protected" \
+    "git branch -D develop" "$REPO" GH_FIXTURE=green
+check PreToolUse deny "production is protected" \
+    "git branch -D production" "$REPO" GH_FIXTURE=green
+check PreToolUse deny "deleting main on the remote" \
+    "git push origin --delete main" "$REPO" GH_FIXTURE=green
+check PreToolUse deny "deleting main by colon refspec" \
+    "git push origin :main" "$REPO" GH_FIXTURE=green
+check PreToolUse deny "deleting main through the REST ref endpoint" \
+    "gh api -X DELETE repos/acme/widgets/git/refs/heads/main" "$REPO" GH_FIXTURE=green
+check PreToolUse silent "a branch merely starting with a protected name is fine" \
+    "git branch -D chore-merged" "$REPO" GH_FIXTURE=green
+check PreToolUse deny "GUARD_PROTECTED_BRANCHES can name another branch" \
+    "git branch -D chore-merged" "$REPO" GH_FIXTURE=green GUARD_PROTECTED_BRANCHES="chore-merged"
+check PreToolUse deny "the default branch stays protected whatever the override says" \
+    "git branch -D main" "$REPO" GH_FIXTURE=green GUARD_PROTECTED_BRANCHES="trunk"
 
 # -----------------------------------------------------------------------------
 echo ""

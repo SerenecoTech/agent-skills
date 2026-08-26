@@ -13,12 +13,14 @@
 #       GitHub Actions incident looks like from the client side: the merge
 #       button is green because nothing reported, not because anything
 #       passed. -> deny
+#   R3  Deleting a protected branch — the repository's default branch, or
+#       one of main/master/develop/production. -> deny
 #   R4  Deleting a branch carrying commits the current user did not author.
 #       -> deny
 #   R5  Deleting a branch whose name has no feature/ or hotfix/ prefix.
 #       -> ask
 #
-# (R3, "deny when review threads are unresolved", was considered and
+# (A sixth rule, "deny when review threads are unresolved", was designed and
 # dropped: passing checks is the safety signal, and unresolved-thread state
 # is noise in any repo where people converse in review.)
 #
@@ -43,9 +45,13 @@
 # closed.
 #
 # Optional configuration (all unset by default):
-#   GUARD_BRANCH_PREFIXES   space-separated prefixes exempt from R5
-#                           (default: "feature/ hotfix/")
-#   GUARD_GITHUB_DISABLE    set to any non-empty value to disable this hook
+#   GUARD_BRANCH_PREFIXES     space-separated prefixes exempt from R5
+#                             (default: "feature/ hotfix/")
+#   GUARD_PROTECTED_BRANCHES  space-separated branch names R3 refuses to
+#                             delete (default: "main master develop
+#                             production"). The repository's own default
+#                             branch is always protected regardless.
+#   GUARD_GITHUB_DISABLE      set to any non-empty value to disable this hook
 #
 # Input:  JSON via stdin with .hook_event_name and .tool_input.command
 # Output: PreToolUse        -> hookSpecificOutput.permissionDecision = deny
@@ -347,19 +353,35 @@ enforce_branch_rules() {
     local branch="$1" segment="$2"
 
     if has_dynamic_value "$segment"; then
-        # Policy rules, not a safety interlock: an unreadable name is worth a
-        # prompt, not a block.
+        # R5 is policy, not a safety interlock, so an unreadable name is worth
+        # a prompt rather than a block. R3 below cannot be skipped that way:
+        # a computed name that resolves to a protected branch is exactly the
+        # case a prompt exists to catch.
         ask "a branch is being deleted under a name computed at run time, so neither its authorship nor its prefix could be checked. Confirm the target."
     fi
-
-    local ref
-    ref=$(branch_ref "$branch") || return 0   # nothing to delete; git will say so
 
     local base
     base=$(default_base) || base=""
 
-    # Already merged into the base: no work can be lost, so neither rule
-    # applies. Without this, every post-merge cleanup trips the prefix rule.
+    # R3 — protected branches. This runs before the merged-branch exemption
+    # below, because a default branch is trivially an ancestor of itself and
+    # would otherwise be waved straight through: `git branch -D main` is the
+    # one deletion the exemption must not cover.
+    local protected="${GUARD_PROTECTED_BRANCHES:-main master develop production}"
+    local candidate
+    for candidate in $protected "${base#origin/}"; do
+        [ -z "$candidate" ] && continue
+        if [ "$branch" = "$candidate" ]; then
+            deny "'$branch' is a protected branch. Deleting it is not branch cleanup — set GUARD_PROTECTED_BRANCHES if this repository genuinely uses a different set."
+        fi
+    done
+
+    local ref
+    ref=$(branch_ref "$branch") || return 0   # nothing to delete; git will say so
+
+    # Already merged into the base: no work can be lost, so neither of the
+    # remaining rules applies. Without this, every post-merge cleanup trips
+    # the prefix rule.
     if [ -n "$base" ] && git merge-base --is-ancestor "$ref" "$base" >/dev/null 2>&1; then
         return 0
     fi

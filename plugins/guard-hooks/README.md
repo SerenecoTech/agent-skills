@@ -3,7 +3,7 @@
 Nine hooks that block dangerous agent actions before they run: privilege escalation, obfuscated
 command execution, writes to credential files, reads of credential files, secrets committed into
 source, printing a credential to the transcript, the wrong package manager, and merges or branch
-deletions that step around a safety check. 536 tests.
+deletions that step around a safety check. 547 tests.
 
 Nothing here depends on the agent choosing to cooperate. A hook runs outside the conversation, so it
 applies equally to an agent mid-task, a subagent you never see the transcript of, and an agent
@@ -35,6 +35,7 @@ Real output from the guards, not paraphrased:
 | `echo "set: ${GH_TOKEN:+yes}${GH_TOKEN:-no}"`  | denied: `':-' prints the VALUE when the variable is set`   |
 | `gh pr merge 42 --squash` with a red check     | denied: `PR #42 is not clear to merge — e2e (failure)`     |
 | `gh pr merge 42` when no workflow ever ran     | denied: `PR #42 has no check runs at all`                  |
+| `git branch -D main`                           | denied: `'main' is a protected branch`                     |
 | `git branch -D feature/theirs`                 | denied: `holds unmerged commits you did not author`        |
 | `git branch -D spike-thing`                    | prompts: unmerged, and no `feature/` or `hotfix/` prefix   |
 | `git push --force origin main`                 | allowed, with a warning to check the branch                |
@@ -303,6 +304,7 @@ themselves. A merge whose checks are green goes through untouched.
 | ---- | -------------------------------------------------------------------- | -------- |
 | R1   | Merging while a check is failing, cancelled, or still running         | deny     |
 | R2   | Merging when no check ran at all                                      | deny     |
+| R3   | Deleting a protected branch                                           | deny     |
 | R4   | Deleting a branch carrying unmerged commits you did not author        | deny     |
 | R5   | Deleting a branch with no `feature/` or `hotfix/` prefix              | ask      |
 
@@ -315,7 +317,12 @@ It watches `gh pr merge`, `gh api …/pulls/N/merge`, `git branch -d/-D/--delete
 …/git/refs/heads/…`. Merge state comes from one GraphQL call — around half a second — reading
 `statusCheckRollup` on the PR's head commit. Everything the branch rules need is local git.
 
-There is no R3. "Deny while review threads are unresolved" was designed and dropped: passing checks
+**R3 protects the repository's own default branch plus `main`, `master`, `develop` and
+`production`.** It deliberately runs before the merged-branch exemption below, because a default
+branch is trivially an ancestor of itself — `git branch -D main` was waved straight through until
+R3 was placed ahead of it. Names are matched exactly, so `main-experiment` is not protected.
+
+A sixth rule, "deny while review threads are unresolved", was designed and dropped: passing checks
 are the safety signal, and unresolved-thread state is noise in any repo where people converse in
 review.
 
@@ -341,10 +348,11 @@ closed.
 
 Both are unset by default and the guard is fully functional without them.
 
-| Variable                | Default            | Effect                                              |
-| ----------------------- | ------------------ | --------------------------------------------------- |
-| `GUARD_BRANCH_PREFIXES` | `feature/ hotfix/` | Space-separated prefixes exempt from R5             |
-| `GUARD_GITHUB_DISABLE`  | unset              | Any non-empty value disables this hook entirely     |
+| Variable                   | Default                            | Effect                                          |
+| -------------------------- | ---------------------------------- | ----------------------------------------------- |
+| `GUARD_BRANCH_PREFIXES`    | `feature/ hotfix/`                 | Space-separated prefixes exempt from R5         |
+| `GUARD_PROTECTED_BRANCHES` | `main master develop production`   | Space-separated branch names R3 refuses to delete |
+| `GUARD_GITHUB_DISABLE`     | unset                              | Any non-empty value disables this hook entirely |
 
 `GUARD_BRANCH_PREFIXES` replaces the defaults rather than adding to them, so include `feature/` and
 `hotfix/` if you still want them:
@@ -353,8 +361,12 @@ Both are unset by default and the guard is fully functional without them.
 export GUARD_BRANCH_PREFIXES="feature/ hotfix/ spike/ chore/"
 ```
 
+`GUARD_PROTECTED_BRANCHES` also replaces its defaults, but the repository's own default branch stays
+protected either way — a repo whose trunk is `trunk` gets it for free, and cannot lose it to a
+careless override.
+
 `GUARD_GITHUB_DISABLE` is the escape hatch for a repository this guard's opinions do not suit. It
-turns off all four rules, not just the branch ones.
+turns off all five rules, not just the branch ones.
 
 ## Tests
 
@@ -363,7 +375,7 @@ bash tests/run-all.sh          # every suite; exits non-zero on any failure
 bash tests/test-bash-guard.sh  # or one at a time
 ```
 
-536 tests: 253 for toolchain-guard, 68 for github-guard, 67 for bash-guard, 55 for rm-guard, 29 for
+547 tests: 253 for toolchain-guard, 79 for github-guard, 67 for bash-guard, 55 for rm-guard, 29 for
 env-expansion-guard, 23 for read-guard, 21 for output-alarm, 20 for write-guard. Each suite finds
 its guard relative to its own location, so they run from any checkout.
 
