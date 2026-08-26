@@ -1,8 +1,9 @@
 # guard-hooks
 
-Eight hooks that block dangerous agent actions before they run: privilege escalation, obfuscated
+Nine hooks that block dangerous agent actions before they run: privilege escalation, obfuscated
 command execution, writes to credential files, reads of credential files, secrets committed into
-source, printing a credential to the transcript, and the wrong package manager. 468 tests.
+source, printing a credential to the transcript, the wrong package manager, and merges or branch
+deletions that step around a safety check. 536 tests.
 
 Nothing here depends on the agent choosing to cooperate. A hook runs outside the conversation, so it
 applies equally to an agent mid-task, a subagent you never see the transcript of, and an agent
@@ -32,14 +33,19 @@ Real output from the guards, not paraphrased:
 | `npm install lodash` beside a `pnpm-lock.yaml` | denied: `pnpm-lock.yaml present — use pnpm instead of npm` |
 | read `~/.config/gh/hosts.yml`                  | denied: `Not reading …: it holds what looks like a live credential` |
 | `echo "set: ${GH_TOKEN:+yes}${GH_TOKEN:-no}"`  | denied: `':-' prints the VALUE when the variable is set`   |
+| `gh pr merge 42 --squash` with a red check     | denied: `PR #42 is not clear to merge — e2e (failure)`     |
+| `gh pr merge 42` when no workflow ever ran     | denied: `PR #42 has no check runs at all`                  |
+| `git branch -D feature/theirs`                 | denied: `holds unmerged commits you did not author`        |
+| `git branch -D spike-thing`                    | prompts: unmerged, and no `feature/` or `hotfix/` prefix   |
 | `git push --force origin main`                 | allowed, with a warning to check the branch                |
+| `gh pr merge 42 --squash` with every check green | allowed; the guard blocks bypasses, not merges           |
 | write `/proj/.env.example`                     | allowed; the guard distinguishes it from `.env`            |
 | `echo "set: ${GH_TOKEN:+yes}"`                 | allowed; that form prints `yes` and nothing else           |
 
 The secret-detection message echoes the credential it matched, shortened here. Writing this README
 tripped that guard on the first attempt, which is roughly the intended experience.
 
-## The eight hooks
+## The nine hooks
 
 | Hook                      | Event                                             | Can decide               | If the hook itself errors |
 | ------------------------- | ------------------------------------------------- | ------------------------ | ------------------------- |
@@ -51,6 +57,7 @@ tripped that guard on the first attempt, which is roughly the intended experienc
 | `toolchain-guard.sh`      | PreToolUse `Bash`                                 | deny only                | **fails open** (allows)   |
 | `output-alarm.sh`         | PostToolUse (most tools)                          | **nothing** — see below  | **fails open** (silent)   |
 | `git-permission.sh`       | PermissionRequest `Bash`                          | nothing; warns only      | silent                    |
+| `github-guard.sh`         | PreToolUse + PermissionRequest `Bash`             | deny and ask             | **fails closed** (denies) |
 
 The fail-closed guards are the security boundary, so a broken one denies instead of waving work
 through. That cuts both ways for `read-guard`: if it breaks, nothing can be read and work stops
@@ -287,6 +294,68 @@ Warns on force pushes, `reset --hard`, `clean -f`, `checkout -- .`, `restore .`,
 `rebase`. It never blocks. These are all legitimate operations that just deserve a second look at
 which branch you're on.
 
+### github-guard
+
+Blocks GitHub operations that step around a safety check, rather than blocking the operations
+themselves. A merge whose checks are green goes through untouched.
+
+| Rule | Trips on                                                             | Decision |
+| ---- | -------------------------------------------------------------------- | -------- |
+| R1   | Merging while a check is failing, cancelled, or still running         | deny     |
+| R2   | Merging when no check ran at all                                      | deny     |
+| R4   | Deleting a branch carrying unmerged commits you did not author        | deny     |
+| R5   | Deleting a branch with no `feature/` or `hotfix/` prefix              | ask      |
+
+**R2 is the incident rule.** An empty check rollup is what a GitHub Actions outage looks like from
+the client side: the merge button is green because nothing reported, not because anything passed.
+That is exactly when a merge is least safe and least likely to be questioned.
+
+It watches `gh pr merge`, `gh api …/pulls/N/merge`, `git branch -d/-D/--delete`, `git push
+<remote> --delete <branch>`, the colon refspec `git push <remote> :<branch>`, and `gh api -X DELETE
+…/git/refs/heads/…`. Merge state comes from one GraphQL call — around half a second — reading
+`statusCheckRollup` on the PR's head commit. Everything the branch rules need is local git.
+
+There is no R3. "Deny while review threads are unresolved" was designed and dropped: passing checks
+are the safety signal, and unresolved-thread state is noise in any repo where people converse in
+review.
+
+**Two events, because one could not carry both decisions.** `PreToolUse` fires for every Bash call
+but has no `ask`, so it carries the three deny rules. `PermissionRequest` is the only event with an
+`ask` decision, so it carries R5 — and it fires only when a call would prompt anyway, which means an
+allow-listed deletion command escapes the prefix rule. The deny rules do not have that hole.
+
+**Unverifiable state is treated as unsafe.** If `gh` is missing, logged out, rate-limited, erroring,
+or the PR number is computed at run time (`gh pr merge $PR`), the merge is denied rather than waved
+through — otherwise a flaky network is a bypass. An unreadable *branch* name degrades to `ask`
+instead, because the branch rules are policy rather than a safety interlock.
+
+**A branch already merged into the base is exempt from both branch rules.** No work can be lost.
+Without that, every post-merge cleanup trips the prefix rule. Note that squash merges leave the
+branch tip un-ancestored, so a squash-merged `chore-foo` still prompts.
+
+The guard stays silent outside a git repository, and in any repository whose origin is not GitHub.
+That is a determinate "out of scope" rather than an unknown, so it falls through rather than failing
+closed.
+
+#### Optional configuration
+
+Both are unset by default and the guard is fully functional without them.
+
+| Variable                | Default            | Effect                                              |
+| ----------------------- | ------------------ | --------------------------------------------------- |
+| `GUARD_BRANCH_PREFIXES` | `feature/ hotfix/` | Space-separated prefixes exempt from R5             |
+| `GUARD_GITHUB_DISABLE`  | unset              | Any non-empty value disables this hook entirely     |
+
+`GUARD_BRANCH_PREFIXES` replaces the defaults rather than adding to them, so include `feature/` and
+`hotfix/` if you still want them:
+
+```bash
+export GUARD_BRANCH_PREFIXES="feature/ hotfix/ spike/ chore/"
+```
+
+`GUARD_GITHUB_DISABLE` is the escape hatch for a repository this guard's opinions do not suit. It
+turns off all four rules, not just the branch ones.
+
 ## Tests
 
 ```bash
@@ -294,9 +363,12 @@ bash tests/run-all.sh          # every suite; exits non-zero on any failure
 bash tests/test-bash-guard.sh  # or one at a time
 ```
 
-468 tests: 253 for toolchain-guard, 67 for bash-guard, 55 for rm-guard, 29 for
+536 tests: 253 for toolchain-guard, 68 for github-guard, 67 for bash-guard, 55 for rm-guard, 29 for
 env-expansion-guard, 23 for read-guard, 21 for output-alarm, 20 for write-guard. Each suite finds
 its guard relative to its own location, so they run from any checkout.
+
+`test-github-guard.sh` builds a fixture repository and puts a fake `gh` on `PATH`, so the suite
+never touches the network and never reads your git config, your `gh` auth, or your settings.
 
 `test-read-guard.sh` asserts that every hook in this plugin can still be read, including
 `lib/secret-patterns.sh`. A secret detector's own source is full of secret-shaped text, and an
@@ -315,3 +387,11 @@ a PEM banner spelled out inside one of its patterns.
   No denial is not evidence that a file is clean.
 - **Category 6 of `bash-guard` will produce false positives** in work that legitimately posts file
   contents to an API.
+- **`github-guard` reads the command word, not the shell's intent.** It recognises `gh` and `git`
+  through an absolute path, a leading `VAR=value`, and an `env` wrapper, but a merge reached through
+  an interpreter — `bash -c "gh pr merge 42"` — presents `bash` as its command word and is not
+  checked. Indirect execution is `bash-guard`'s category, not this one's.
+- **`github-guard`'s R5 can be escaped by an allow-list.** `ask` exists only on `PermissionRequest`,
+  which fires only when a call would otherwise prompt, so a `Bash(git branch -D *)` entry in
+  `permissions.allow` skips the prefix rule entirely. The three deny rules run on `PreToolUse` and
+  do not have that hole.
