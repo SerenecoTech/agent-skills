@@ -14,7 +14,7 @@
       "source": "./plugins/adversarial-review",
       "displayName": "Adversarial Review",
       "description": "Adversarial code, architecture and specification review using OpenAI Codex as a second hostile reviewer, with PreToolUse hooks enforcing write-path authorisation, refutation-appendix ingestion and rubric integrity.",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "author": {
         "name": "Sereneco"
       },
@@ -26,7 +26,7 @@
       "source": "./plugins/handoff",
       "displayName": "Handoff",
       "description": "Write and resume HANDOFF.md so work survives context limits, /clear and session boundaries without the user re-explaining the task.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Sereneco"
       },
