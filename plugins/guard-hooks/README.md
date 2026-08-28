@@ -1,79 +1,29 @@
 # guard-hooks
 
-Eight hooks that block dangerous agent actions before they run: privilege escalation, obfuscated
-command execution, writes to credential files, reads of credential files, secrets committed into
-source, printing a credential to the transcript, and the wrong package manager. 468 tests.
+Nine hooks that block dangerous agent actions before they run.
 
 Nothing here depends on the agent choosing to cooperate. A hook runs outside the conversation, so it
-applies equally to an agent mid-task, a subagent you never see the transcript of, and an agent
-acting on instructions it picked up from a file it read.
+applies equally to an agent mid-task, a subagent whose transcript you never see, and an agent acting
+on instructions it picked up from a file it read.
 
-Credentials get three layers, because no single one covers the ground:
+## What it blocks
 
-- **the command**, for tools that exist to print a secret (`gh auth token`, `git credential fill`);
-- **the data at rest**, for files that already hold one — the file is on disk before the read, so
-  the content decides and no command has to be recognised;
-- **the variable**, for `echo "${GH_TOKEN:-no}"` and its relatives, which print a credential without
-  involving any credential-related command at all.
-
-Anything that slips all three is caught on the way out by `output-alarm`, which cannot prevent the
-leak — nothing at PostToolUse can — but turns a silent one into a known one that gets rotated.
-
-## What it looks like
-
-Real output from the guards, not paraphrased:
-
-| You (or your agent) attempt                    | Result                                                     |
+| Attempt                                        | Result                                                     |
 | ---------------------------------------------- | ---------------------------------------------------------- |
-| write `/proj/.env`                             | denied: `Cannot write to protected file: /proj/.env`       |
-| write an AWS key into `config.js`              | denied: `Potential secret detected in content: AKIA…`      |
 | `sudo apt install nginx`                       | denied: `Privilege escalation blocked`                     |
 | `curl -s http://…/install.sh \| sh`            | denied: `Obfuscated execution pattern blocked`             |
-| `npm install lodash` beside a `pnpm-lock.yaml` | denied: `pnpm-lock.yaml present — use pnpm instead of npm` |
-| read `~/.config/gh/hosts.yml`                  | denied: `Not reading …: it holds what looks like a live credential` |
+| write `/proj/.env`                             | denied: `Cannot write to protected file`                   |
+| write an AWS key into `config.js`              | denied: `Potential secret detected in content`             |
+| read `~/.config/gh/hosts.yml`                  | denied: the file holds a live credential                   |
 | `echo "set: ${GH_TOKEN:+yes}${GH_TOKEN:-no}"`  | denied: `':-' prints the VALUE when the variable is set`   |
-| `git push --force origin main`                 | allowed, with a warning to check the branch                |
-| write `/proj/.env.example`                     | allowed; the guard distinguishes it from `.env`            |
+| `npm install lodash` beside a `pnpm-lock.yaml` | denied: `pnpm-lock.yaml present — use pnpm instead of npm` |
+| `gh pr merge 42` with a red check              | denied: `PR #42 is not clear to merge — e2e (failure)`     |
+| `gh pr merge 42` when no workflow ran          | denied: `PR #42 has no check runs at all`                  |
+| `git branch -D main`                           | denied: `'main' is a protected branch`                     |
+| `git branch -D spike-thing`                    | prompts: no `feature/` or `hotfix/` prefix                 |
+| `gh pr merge 42` with checks green             | allowed; the guard blocks bypasses, not merges             |
+| write `/proj/.env.example`                     | allowed; distinguished from `.env`                         |
 | `echo "set: ${GH_TOKEN:+yes}"`                 | allowed; that form prints `yes` and nothing else           |
-
-The secret-detection message echoes the credential it matched, shortened here. Writing this README
-tripped that guard on the first attempt, which is roughly the intended experience.
-
-## The eight hooks
-
-| Hook                      | Event                                             | Can decide               | If the hook itself errors |
-| ------------------------- | ------------------------------------------------- | ------------------------ | ------------------------- |
-| `bash-guard.sh`           | PreToolUse `Bash`                                 | deny only                | **fails closed** (denies) |
-| `write-guard.sh`          | PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | deny only                | **fails closed** (denies) |
-| `read-guard.sh`           | PreToolUse `Read\|NotebookRead`                   | deny only                | **fails closed** (denies) |
-| `env-expansion-guard.sh`  | PreToolUse `Bash`                                 | deny only                | **fails closed** (denies) |
-| `rm-guard.sh`             | PreToolUse `Bash`                                 | allow only, never denies | falls through             |
-| `toolchain-guard.sh`      | PreToolUse `Bash`                                 | deny only                | **fails open** (allows)   |
-| `output-alarm.sh`         | PostToolUse (most tools)                          | **nothing** — see below  | **fails open** (silent)   |
-| `git-permission.sh`       | PermissionRequest `Bash`                          | nothing; warns only      | silent                    |
-
-The fail-closed guards are the security boundary, so a broken one denies instead of waving work
-through. That cuts both ways for `read-guard`: if it breaks, nothing can be read and work stops
-immediately, which is loud and gets fixed. The alternative failure — reading every credential file
-silently — is not.
-
-`toolchain-guard` fails open deliberately: it enforces a project convention rather than a security
-property, and a convention check that blocks legitimate commands when it breaks is a check you will
-switch off. `env-expansion-guard` fails closed despite also running on every Bash call, because its
-prototype shipped a `pipefail` bug that made it fail open and allow everything silently — exactly
-the failure a security control must not have.
-
-**`output-alarm` cannot prevent anything.** PostToolUse runs after the tool; the event accepts no
-permission decision, and there is no redaction or suppression mechanism in the harness. By the time
-it runs, the credential is in the transcript. It exists because it is the only layer that covers
-printers nobody enumerated, and because knowing a credential leaked is the difference between
-rotating it and not. It sets `continue: false` so the session stops rather than building more work
-on top of a credential that now needs rotating.
-
-Patterns live once, in `hooks/lib/secret-patterns.sh`, shared by `write-guard`, `read-guard` and
-`output-alarm`. They were three copies until one of them was fixed and the others were not: the
-`gh[ps]_` pattern matched personal and server tokens but missed `gho_`, which is the OAuth prefix
-and the exact token type the August 2026 incident leaked.
 
 ## Install
 
@@ -86,18 +36,79 @@ claude plugin install guard-hooks@sereneco
 check `claude plugin list` shows `Status: ✔ enabled`; a hook that failed to load is reported there
 and not by `claude plugin validate`.
 
+Needs `jq` ≥ 1.6, `bash` ≥ 4, `git` and coreutils. `gh` is needed only for the GitHub merge rules.
+
 ### If you already wire these up by hand
 
 Installing the plugin while the same scripts are still referenced from `settings.json` runs every
-guard twice. That's harmless for deny-only guards, but remove the duplicate `PreToolUse` entries so
-there's one place to reason about.
+guard twice. Harmless for deny-only guards, but remove the duplicate `PreToolUse` entries so there
+is one place to reason about.
+
+## Configuration
+
+Everything works unconfigured. Three optional variables adjust the GitHub rules:
+
+| Variable                   | Default                          | Effect                                            |
+| -------------------------- | -------------------------------- | ------------------------------------------------- |
+| `GUARD_BRANCH_PREFIXES`    | `feature/ hotfix/`               | Branch prefixes exempt from the prefix prompt     |
+| `GUARD_PROTECTED_BRANCHES` | `main master develop production` | Branch names that cannot be deleted               |
+| `GUARD_GITHUB_DISABLE`     | unset                            | Any non-empty value disables `github-guard`       |
+
+Both lists replace their defaults rather than adding to them:
+
+```bash
+export GUARD_BRANCH_PREFIXES="feature/ hotfix/ spike/ chore/"
+```
+
+The repository's own default branch stays protected whatever `GUARD_PROTECTED_BRANCHES` says, so a
+repo whose trunk is called `trunk` gets it for free.
+
+## The nine hooks
+
+| Hook                      | Event                                             | Can decide               | If the hook itself errors |
+| ------------------------- | ------------------------------------------------- | ------------------------ | ------------------------- |
+| `bash-guard.sh`           | PreToolUse `Bash`                                 | deny only                | **fails closed** (denies) |
+| `write-guard.sh`          | PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | deny only                | **fails closed** (denies) |
+| `read-guard.sh`           | PreToolUse `Read\|NotebookRead`                   | deny only                | **fails closed** (denies) |
+| `env-expansion-guard.sh`  | PreToolUse `Bash`                                 | deny only                | **fails closed** (denies) |
+| `github-guard.sh`         | PreToolUse + PermissionRequest `Bash`             | deny and ask             | **fails closed** (denies) |
+| `rm-guard.sh`             | PreToolUse `Bash`                                 | allow only, never denies | falls through             |
+| `toolchain-guard.sh`      | PreToolUse `Bash`                                 | deny only                | **fails open** (allows)   |
+| `output-alarm.sh`         | PostToolUse (most tools)                          | **nothing** — see below  | **fails open** (silent)   |
+| `git-permission.sh`       | PermissionRequest `Bash`                          | nothing; warns only      | silent                    |
+
+The fail-closed guards are the security boundary, so a broken one denies instead of waving work
+through. `toolchain-guard` fails open deliberately: it enforces a project convention rather than a
+security property, and a convention check that blocks legitimate commands when it breaks is a check
+you will switch off.
+
+**`output-alarm` cannot prevent anything.** PostToolUse runs after the tool, the event accepts no
+permission decision, and there is no redaction mechanism in the harness. By the time it runs, the
+credential is in the transcript. It exists because knowing a credential leaked is the difference
+between rotating it and not. It sets `continue: false` so the session stops rather than building
+more work on a credential that now needs rotating.
+
+## Credentials get three layers
+
+No single layer covers the ground:
+
+- **the command**, for tools that exist to print a secret (`gh auth token`, `git credential fill`);
+- **the data at rest**, for files that already hold one — the file is on disk before the read, so
+  the content decides and no command has to be recognised;
+- **the variable**, for `echo "${GH_TOKEN:-no}"` and its relatives, which print a credential without
+  involving any credential-related command at all.
+
+Anything that slips all three is caught on the way out by `output-alarm`.
+
+Patterns live once, in `hooks/lib/secret-patterns.sh`, shared by `write-guard`, `read-guard` and
+`output-alarm`.
 
 ## What each hook does
 
 ### bash-guard
 
 Normalises the command first, stripping most quoting and escaping and collapsing whitespace, so
-`s\u\d\o` doesn't slip past. Then six categories:
+`s\u\d\o` does not slip past. Then six categories:
 
 | #   | Category                    | Caught, for example                                                          |
 | --- | --------------------------- | ---------------------------------------------------------------------------- |
@@ -113,8 +124,8 @@ script says so at that line.
 
 ### write-guard
 
-Resolves symlinks and relative paths before matching, and for a file that doesn't exist yet it
-resolves the parent directory, so a symlink can't be used to reach a protected target.
+Resolves symlinks and relative paths before matching. For a file that does not exist yet it resolves
+the parent directory, so a symlink cannot be used to reach a protected target.
 
 - **Protected paths** — `.env` and its environment variants but not `.env.example`; SSH keys; TLS
   keys and certificates; AWS, Azure and GCP credentials; kubeconfig; Docker config; npm, pypi and
@@ -125,21 +136,89 @@ resolves the parent directory, so a symlink can't be used to reach a protected t
   base64 alone.
 - **System directories** — `/etc`, `/boot`, `/sys`, `/proc`, `/dev`, `/root`, plus the macOS
   `/private/...` equivalents.
-- **Git internals** — `.git/hooks/` and `.git/config`, which are a code-execution vector and a
+- **Git internals** — `.git/hooks/` and `.git/config`, a code-execution vector and a
   credential-helper vector respectively.
+
+### read-guard
+
+Opens the file the `Read` tool is about to open, scans it, and denies if it holds a credential.
+Catches `.env` files, `~/.config/gh/hosts.yml`, private keys, saved `credential fill` output and
+connection strings with passwords in them.
+
+The deny message suggests ways to work with the file without reading the value: `grep -c` to confirm
+a key exists, `grep -oE '^[A-Za-z_]+='` to list key names, or a redacted copy.
+
+Two limits. It reads the first 256KB, so a secret past that offset is missed. And a path naming
+itself `test`, `fixture`, `example`, `sample`, `mock` or `dummy` is exempt, because repos are full
+of deliberately fake secrets — which means a genuine key in `config.example.env` is invisible.
+
+### env-expansion-guard
+
+Denies a command that would print the value of a credential-bearing environment variable. Parameter
+expansion is a small fixed grammar, and the dangerous forms are literal substrings that survive any
+amount of nesting and quoting. Measured with a token in the variable:
+
+| Form | Prints | |
+|---|---|---|
+| `${V:+word}` | `word` | safe |
+| `${#V}` | the length | safe |
+| `${V:0:4}` | a 4-character prefix | safe |
+| `[ -n "$V" ]` | nothing | safe |
+| `${V:-word}` | **the value** | denied |
+| `$V`, `${V}` | **the value** | denied |
+
+It fires only when something in the command can print, so *using* a credential is untouched:
+`curl -H "Authorization: Bearer $GH_TOKEN"` and `git push` both run.
+
+Variables match by suffix — `*_TOKEN`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_ACCESS_KEY`,
+`*_CREDENTIALS` and friends — so a new `SOMETHING_TOKEN` is covered without an edit. Bare `KEY` is
+deliberately absent: `PUBLIC_KEY`, `LICENSE_KEY` and `AWS_ACCESS_KEY_ID` are not secrets.
+
+### github-guard
+
+Blocks GitHub operations that step around a safety check, rather than blocking the operations
+themselves. A merge whose checks are green goes through untouched.
+
+| Trips on                                                       | Decision |
+| -------------------------------------------------------------- | -------- |
+| Merging while a check is failing, cancelled, or still running   | deny     |
+| Merging when no check ran at all                                | deny     |
+| Deleting a protected branch                                     | deny     |
+| Deleting a branch carrying unmerged commits you did not author  | deny     |
+| Deleting a branch with no `feature/` or `hotfix/` prefix        | ask      |
+
+**The empty-rollup rule is the one worth understanding.** No check runs at all is what a GitHub
+Actions outage looks like from the client side: the merge button is green because nothing reported,
+not because anything passed. That is when a merge is least safe and least likely to be questioned.
+
+It watches `gh pr merge`, `gh api …/pulls/N/merge`, `git branch -d/-D/--delete`, `git push <remote>
+--delete <branch>`, the colon refspec `git push <remote> :<branch>`, and `gh api -X DELETE
+…/git/refs/heads/…`. Merge state comes from one GraphQL call reading `statusCheckRollup` on the PR
+head, around half a second. The branch rules are local git only.
+
+A branch already merged into the base is exempt from the branch rules, so post-merge cleanup does
+not prompt. Squash merges leave the branch tip un-ancestored, so a squash-merged `chore-foo` still
+prompts.
+
+**Unverifiable state is treated as unsafe.** If `gh` is missing, logged out, rate-limited, erroring,
+or the PR number is computed at run time (`gh pr merge $PR`), the merge is denied rather than waved
+through, because otherwise a flaky network is a bypass. An unreadable *branch* name degrades to
+`ask` instead.
+
+The guard stays silent outside a git repository, and in any repository whose origin is not GitHub.
 
 ### rm-guard
 
-Cuts down permission prompts without widening what's permitted. It returns `allow` only when every
+Cuts down permission prompts without widening what is permitted. It returns `allow` only when every
 segment of the command is statically decidable:
 
 - each `rm` segment is non-recursive, glob-free and quote-free, resolves through symlinks to
-  somewhere strictly inside the project root, and isn't a directory;
+  somewhere strictly inside the project root, and is not a directory;
 - each non-`rm` segment is either a known-inert builtin or already matches a `permissions.allow`
   pattern in your settings.
 
 Anything containing `$`, backticks, `$(`, process substitution or redirection falls through to the
-normal permission flow, since you can't then assert what value `rm` will receive.
+normal permission flow, since you cannot then assert what value `rm` will receive.
 
 This hook never denies. `bash-guard` is the deny layer, and keeping them separate is what stops an
 `allow` here from over-permitting a compound command with a dangerous sibling.
@@ -151,167 +230,72 @@ Reads what the project declares about itself:
 - **JS/TS**, lock file priority `bun` > `pnpm` > `yarn`. A `bun.lock` or `bun.lockb` blocks npm,
   npx, yarn and pnpm; `pnpm-lock.yaml` blocks npm, npx and yarn; `yarn.lock` blocks npm for
   install, add, remove and ci. `package.json#packageManager` enforces whatever it names.
-- **Python.** With `VIRTUAL_ENV` active it blocks explicit global `pip` paths, `python3 -m pip`,
-  and explicit global tool paths. A `uv.lock` blocks bare `pip` and `pip3`.
+- **Python.** With `VIRTUAL_ENV` active it blocks explicit global `pip` paths, `python3 -m pip`, and
+  explicit global tool paths. A `uv.lock` blocks bare `pip` and `pip3`.
 
-It also blocks two shapes that have nothing to do with toolchains but live here because they are
-the same kind of check:
+It also blocks two shapes unrelated to toolchains, which live here because they are the same kind of
+check.
 
-- **Interpreter heredocs and deleting one-liners.** `python3 << EOF`, and
-  `node -e "require('fs').unlinkSync(...)"` and equivalents. Neither can be meaningfully
-  permission-scoped, because the interpreter can do anything an allow rule would have to cover.
-- **Commands whose stdout is a credential.** `git credential fill`, a credential helper's own
-  `get`, `gh auth token`, and `gh auth status --show-token` (or `-t`, the same flag). These break
-  nothing and print a live secret, and an agent's stdout becomes conversation transcript, which is
-  summarised into session memory. A token printed there has to be rotated, not deleted.
+**Interpreter heredocs and deleting one-liners.** `python3 << EOF`, and
+`node -e "require('fs').unlinkSync(...)"` and equivalents. Neither can be meaningfully
+permission-scoped, because the interpreter can do anything an allow rule would have to cover.
 
-  `git credential fill` is allowed only when **that command** resets the helper list
-  (`-c credential.helper=` with an empty value) and nothing on it puts a helper back. The reset
-  protects the command it is written on, not its neighbours, so
-  `git -c credential.helper= credential fill; git credential fill` is denied for the second one.
-  Things
-  that put one back, all verified against git 2.55 with a stub helper: a bare name
-  (`-c credential.helper=osxkeychain`); a `!…` value, which is a shell snippet that can call the
-  store itself; **a path ending in `git-credential-osxkeychain`, `-store`, `-cache`, `-manager` and
-  friends**, because the stores ship as executables under git's exec-path and naming one by path is
-  the same store spelled longer; and three routes that are not the `credential.helper=` spelling at
-  all — a URL-scoped `credential.https://host.helper=`, `--config-env`, and `-c include.path=` to a
-  config that already configures one.
+**Commands whose stdout is a credential.** `git credential fill`, a credential helper's own `get`,
+`gh auth token`, and `gh auth status --show-token`. These break nothing and print a live secret, and
+an agent's stdout becomes conversation transcript. A token printed there has to be rotated, not
+deleted.
 
-  `gh auth token` is allowed when **its own stdout** goes to a file. Things that look like that and
-  are not: `2>/dev/null` (stderr, while stdout still prints); a redirect on another command in the
-  line, on a backgrounded neighbour (`gh auth token & echo x > f`), or inside a command
-  substitution; a redirect of any descriptor other than 1, including `0>` and `12>`; a second
-  unredirected occurrence later on the same line; and `/dev/stdout`, `/dev/stderr`, `/dev/tty`,
-  `/dev/fd/N` as targets. `>|`, `{ … ; } > f` and `( … ) > f` do count. `git credential approve` and
-  `reject` are allowed — they read stdin and print nothing.
+Two narrow exemptions:
 
-  Matching follows what the shell does, within reach of a regex. `\gh` is `gh` (a backslash only
-  suppresses an alias); `/opt/homebrew/bin/gh` is `gh`; quotes around a single word are transparent,
-  so `gh auth "token"` is caught; a quoted redirect target is the same target, so
-  `> "/dev/stdout"` does not count as safe. A quoted run containing whitespace is prose belonging to
-  whatever command owns the quotes, so `git commit -m "block git credential fill"` and
-  `grep -rn "git credential fill" docs/` run — including multi-line commit bodies. A `$(…)` or
-  backtick inside those quotes is **not** prose: the shell runs it, so its body is matched on its
-  own and `echo "$(gh auth token)"` is denied. A separator inside quotes is data, not a separator.
+- `git credential fill` runs when **that command** resets the helper list (`-c credential.helper=`
+  with an empty value) and nothing on it puts a helper back. The reset protects the command it is
+  written on, not its neighbours. `git credential approve` and `reject` always run — they read stdin
+  and print nothing.
+- `gh auth token` runs when **its own stdout** goes to a file. `2>/dev/null` does not count, nor a
+  redirect belonging to another command on the line, nor `/dev/stdout`, `/dev/stderr`, `/dev/tty` or
+  `/dev/fd/N` as targets.
 
-  Quoting the binary's own name (`"gh" auth token`) does not help, a separator inside quotes is
-  data rather than a separator, and a backslash-escaped quote is a literal — the quote scan honours
-  escapes, so `sed -i "s/\"/x/g" f > /tmp/o; gh auth token` still denies the second command.
-
-  Three things this deliberately does not reach. `bash -c "gh auth token"` is allowed: nothing a
-  regex does can read inside quotes and not read inside prose, and prose is the commoner case. A
-  redirect established earlier by `exec > f` is not tracked, so `exec > f; gh auth token` is denied
-  although it is safe. And a group holding more than one command keeps only its last command's
-  view of the redirect, so `{ gh auth token; echo done; } > f` is denied although it is safe;
-  `{ echo start; gh auth token; } > f` is allowed. Both over-blocks err toward denying a print.
-
-  This section exists because of a real incident, not a hypothetical: `git credential fill` was
-  used to check which fields a helper receives, the stub helper returned nothing, git fell through
-  to the machine's osxkeychain helper, and an OAuth token carrying `admin:org` and
-  `admin:public_key` was printed into a transcript. Four adversarial review rounds against the
-  first implementation found twenty-four ways past it or around it; the tests in `Section 6b` to
-  `6e` are those cases, one test per defect. Eight of the twenty-four were introduced by the fix to
-  an earlier one, which is the honest measure of how well regexes model a shell: this section
-  denies more than it did and is still a heuristic, not a parser.
-
-### read-guard
-
-Opens the file the `Read` tool is about to open, scans it, and denies if it holds a credential. No
-command to recognise and no shell to parse — the file exists before the tool runs, so the content
-answers the question directly. Catches `.env` files, `~/.config/gh/hosts.yml`, private keys, saved
-`credential fill` output and connection strings with passwords in them.
-
-Two limits worth knowing. It reads the first 256KB, so a secret past that offset is missed. And a
-path naming itself `test`, `fixture`, `example`, `sample`, `mock` or `dummy` is exempt, because the
-repo is full of deliberately fake secrets — which means a genuine key in `config.example.env` is
-invisible. That is the same trade `write-guard` has always made.
-
-The deny message suggests ways to work with the file without reading the value: `grep -c` to confirm
-a key exists, `grep -oE '^[A-Za-z_]+='` to list key names, or a redacted copy.
-
-### env-expansion-guard
-
-Denies a command that would print the value of a credential-bearing environment variable.
-
-Written after a second real incident. An agent probing a container ran, three layers deep inside
-`docker exec … zsh -lc '…'`:
-
-```bash
-echo "GH_TOKEN set: ${GH_TOKEN:+yes}${GH_TOKEN:-no}"
-```
-
-That reads as a set/unset probe and is not one. `:-` substitutes the default only when the variable
-is **empty**, so with a token present it prints `yes` followed by the token. The output was
-`GH_TOKEN set: yesgho_…`. No credential command appears anywhere in that line — the printer is
-`echo` — so nothing in `toolchain-guard`'s model can see it, and no amount of better shell parsing
-would change that.
-
-What makes this checkable is that parameter expansion is a small fixed grammar, and the dangerous
-forms are literal substrings that survive any amount of nesting and quoting. Measured with a token
-in the variable:
-
-| Form | Prints | |
-|---|---|---|
-| `${V:+word}` | `word` | safe |
-| `${#V}` | the length | safe |
-| `${V:0:4}` | a 4-character prefix | safe |
-| `[ -n "$V" ]` | nothing | safe |
-| `${V:-word}` | **the value** | denied |
-| `$V`, `${V}` | **the value** | denied |
-
-It only fires when something in the command can print, so using a credential is untouched:
-`curl -H "Authorization: Bearer $GH_TOKEN"` and `git push` both run. Variables are matched by
-suffix — `*_TOKEN`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_ACCESS_KEY`, `*_CREDENTIALS` and
-friends — so a new `SOMETHING_TOKEN` is covered without an edit. Bare `KEY` is deliberately absent:
-`PUBLIC_KEY`, `LICENSE_KEY` and `AWS_ACCESS_KEY_ID` are not secrets.
+Matching follows what the shell does, within reach of a regex. `\gh` and `/opt/homebrew/bin/gh` are
+both `gh`, and quotes around a single word are transparent, so `gh auth "token"` is caught. A quoted
+run containing whitespace is prose belonging to whatever command owns the quotes, so
+`git commit -m "block git credential fill"` runs. A `$(…)` inside those quotes is not prose: the
+shell runs it, so `echo "$(gh auth token)"` is denied.
 
 ### output-alarm
 
 Scans what came back. Raises an alarm and stops the session if a credential is in it.
 
-It prevents nothing, and the README says so twice on purpose. What it covers is the class no
-PreToolUse hook can: a printer nobody enumerated. `security find-generic-password -w`,
-`aws configure get`, `op read`, a token echoed out of a shell variable, a push error containing
-`https://x-access-token:ghs_…@github.com` — none of these are recognisable in advance, all of them
-are obvious in the output.
+It covers the class no PreToolUse hook can: a printer nobody enumerated.
+`security find-generic-password -w`, `aws configure get`, `op read`, a token echoed out of a shell
+variable, a push error containing `https://x-access-token:ghs_…@github.com`. None are recognisable
+in advance; all are obvious in the output.
 
-Strict patterns only. The contextual tier matches a stub helper printing `password=STUB`, and
-halting a session on a heuristic is not a trade worth making. The consequence is that it also misses
-unstructured secrets: a bare passphrase from `op read` has no shape to match, and the generic
-high-entropy rule that would catch it fires five times on `git log --format=%H`.
+Strict patterns only. A contextual tier matches a stub helper printing `password=STUB`, and halting
+a session on a heuristic is not a trade worth making. The consequence is that it misses unstructured
+secrets: a bare passphrase from `op read` has no shape to match.
 
 ### git-permission
 
 Warns on force pushes, `reset --hard`, `clean -f`, `checkout -- .`, `restore .`, `branch -D` and
-`rebase`. It never blocks. These are all legitimate operations that just deserve a second look at
-which branch you're on.
-
-## Tests
-
-```bash
-bash tests/run-all.sh          # every suite; exits non-zero on any failure
-bash tests/test-bash-guard.sh  # or one at a time
-```
-
-468 tests: 253 for toolchain-guard, 67 for bash-guard, 55 for rm-guard, 29 for
-env-expansion-guard, 23 for read-guard, 21 for output-alarm, 20 for write-guard. Each suite finds
-its guard relative to its own location, so they run from any checkout.
-
-`test-read-guard.sh` asserts that every hook in this plugin can still be read, including
-`lib/secret-patterns.sh`. A secret detector's own source is full of secret-shaped text, and an
-earlier draft of the pattern file could not be written to disk at all because `write-guard` matched
-a PEM banner spelled out inside one of its patterns.
+`rebase`. It never blocks. These are legitimate operations that deserve a second look at which
+branch you are on.
 
 ## Limitations
 
 - **Pattern matching is not a sandbox.** These guards catch the common shapes of a dangerous command
   and raise the cost of a mistake. A determined bypass through an encoding nobody anticipated is
-  still possible, and defending against that is a sandbox's job, not a regex's.
+  still possible, and defending against that is a sandbox's job.
 - **`rm-guard` returns `allow`,** which Claude Code treats as more permissive than `ask`. The
-  static-decidability rules above are the only thing keeping that narrow, so loosening them widens
-  real permissions.
-- **Secret detection is a list of known shapes.** A credential format that isn't on the list passes.
-  No denial is not evidence that a file is clean.
-- **Category 6 of `bash-guard` will produce false positives** in work that legitimately posts file
+  static-decidability rules above are the only thing keeping that narrow.
+- **Secret detection is a list of known shapes.** A credential format that is not on the list
+  passes. No denial is not evidence that a file is clean.
+- **Category 6 of `bash-guard` produces false positives** in work that legitimately posts file
   contents to an API.
+- **`github-guard` reads the command word, not the shell's intent.** It recognises `gh` and `git`
+  through an absolute path, a leading `VAR=value`, and an `env` wrapper, but a merge reached through
+  an interpreter — `bash -c "gh pr merge 42"` — presents `bash` as its command word and is not
+  checked.
+- **`github-guard`'s prefix prompt can be escaped by an allow-list.** `ask` exists only on
+  `PermissionRequest`, which fires only when a call would otherwise prompt, so a
+  `Bash(git branch -D *)` entry in `permissions.allow` skips it. The deny rules run on `PreToolUse`
+  and have no such hole.
