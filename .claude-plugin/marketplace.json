@@ -5,8 +5,8 @@
     "url": "https://github.com/serenecotech"
   },
   "metadata": {
-    "description": "Sereneco agent plugins, skills and hooks for review discipline, session continuity and security guardrails.",
-    "version": "0.2.0"
+    "description": "Sereneco agent plugins, skills and hooks for review discipline, session continuity, security guardrails, permission-prompt reduction and human-readable writing.",
+    "version": "0.3.0"
   },
   "plugins": [
     {
@@ -44,6 +44,30 @@
       },
       "category": "security",
       "keywords": ["security", "hooks", "guardrails", "secrets", "toolchain"]
+    },
+    {
+      "name": "check-compound-bash",
+      "source": "./plugins/check-compound-bash",
+      "displayName": "Check Compound Bash",
+      "description": "PreToolUse hook that splits compound Bash commands into their sub-commands with shfmt and checks each against your Bash(...) allow and deny rules: auto-approves when every segment is allowed, denies when any segment is denied, otherwise falls through to the native prompt.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Sereneco"
+      },
+      "category": "productivity",
+      "keywords": ["hooks", "permissions", "bash", "shfmt", "allowlist"]
+    },
+    {
+      "name": "humanize",
+      "source": "./plugins/humanize",
+      "displayName": "Humanize",
+      "description": "One skill for anything a person will read. humanize classifies the text as a reply, documentation or creative copy and applies the matching ruleset (procedural-writing, descriptive-writing, creative-copy) so the reader gets it in one pass. A SessionStart hook loads the reply rules so answers in the conversation follow them too.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Sereneco"
+      },
+      "category": "writing",
+      "keywords": ["writing", "readability", "documentation", "copy", "replies", "hooks"]
     }
   ]
 }

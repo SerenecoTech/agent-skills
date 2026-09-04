@@ -33,6 +33,8 @@ jobs:
           shellcheck -S warning -e SC1091 \
             plugins/guard-hooks/hooks/*.sh \
             plugins/guard-hooks/hooks/lib/*.sh \
+            plugins/check-compound-bash/hooks/*.sh \
+            plugins/humanize/hooks/*.sh \
             .github/scripts/*.sh
 
       - name: Syntax-check the test suites

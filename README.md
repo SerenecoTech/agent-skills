@@ -1,6 +1,8 @@
 # agent-skills
 
-Three Claude Code plugins: hostile code review, session handoff, and security guard hooks.
+Five Claude Code plugins: hostile code review, session handoff, security guard hooks, fewer
+permission prompts for compound shell commands, and writing skills for text that does not read as
+AI-generated.
 
 Bash and Markdown throughout. Nothing to build, nothing to compile.
 
@@ -11,12 +13,15 @@ claude plugin marketplace add serenecotech/agent-skills
 claude plugin install adversarial-review@sereneco
 claude plugin install handoff@sereneco
 claude plugin install guard-hooks@sereneco
+claude plugin install check-compound-bash@sereneco
+claude plugin install humanize@sereneco
 ```
 
 Or run `/plugin` in Claude Code and browse.
 
 **Restart Claude Code afterwards.** Skills work immediately, but hooks load only at session start,
-so `adversarial-review` and `guard-hooks` sit inert until you do. Then run `claude plugin list` and
+so `adversarial-review`, `guard-hooks`, `check-compound-bash` and the `humanize` reply rules sit
+inert until you do. Then run `claude plugin list` and
 check each says `Status: ✔ enabled`. A hook that failed to load shows up there, and nowhere else.
 
 Both spellings are correct: `serenecotech` is the GitHub organisation, `sereneco` is the
@@ -35,6 +40,16 @@ fixes them, and Codex never writes to your repository.
 merges that skip a failing check. Enforced outside the conversation, so an agent cannot talk its way
 past them.
 
+**[check-compound-bash](plugins/check-compound-bash/)** — splits `a && b | c` into its parts and
+checks each one against your `Bash(...)` allow and deny rules. When every part is already allowed,
+the permission prompt is skipped. When any part is denied, the command is blocked. Anything else
+falls through to the normal prompt.
+
+**[humanize](plugins/humanize/)** — one skill for anything a person will read. Say "write the
+docs", "de-slop this" or "make it sound human" and `humanize` classifies the text as a reply,
+documentation or creative copy, then applies the matching ruleset so the reader gets it in one pass.
+A session-start hook loads the reply rules, so answers in the conversation follow them too.
+
 Each plugin has its own README.
 
 ## Requirements
@@ -44,6 +59,8 @@ Each plugin has its own README.
 | adversarial-review | `codex` ≥ 0.146.0 (authenticated), `jq` ≥ 1.6, `bash` ≥ 4, `git`, `shuf`, coreutils. `gh` only for reviewing a PR by number. |
 | handoff | `git`. |
 | guard-hooks | `jq` ≥ 1.6, `bash` ≥ 4, `git`, coreutils. `gh` for the GitHub merge rules. |
+| check-compound-bash | `shfmt`, `jq` ≥ 1.6, `bash` ≥ 4.3. Without `shfmt` or `jq` it does nothing and the normal prompt appears. |
+| humanize | `sh`. The skills need nothing. |
 
 ## Layout
 
@@ -54,8 +71,10 @@ skills/                            standalone skills, no harness dependency
 ```
 
 Skills inside the plugins are ordinary `SKILL.md` files with YAML frontmatter, so you can symlink
-one into another agent's skills directory instead of installing the plugin. `handoff` and
-`handoff-resume` port cleanly, having no scripts or hooks at all. The Claude Code-specific pieces
+one into another agent's skills directory instead of installing the plugin. `handoff`,
+`handoff-resume` and the three `humanize` rulesets port cleanly, having no scripts or hooks at all.
+The `humanize` router reads its siblings through `${CLAUDE_PLUGIN_ROOT}`, so fix those paths when
+porting it. The Claude Code-specific pieces
 are `hooks.json` and `${CLAUDE_PLUGIN_ROOT}`.
 
 ## Two conventions

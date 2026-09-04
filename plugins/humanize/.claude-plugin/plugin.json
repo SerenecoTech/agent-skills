@@ -1,0 +1,12 @@
+{
+  "name": "humanize",
+  "description": "One skill for anything a person will read. humanize classifies the text as a reply, documentation or creative copy and applies the matching ruleset (procedural-writing, descriptive-writing, creative-copy) so the reader gets it in one pass. A SessionStart hook loads the reply rules so answers in the conversation follow them too.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Sereneco"
+  },
+  "homepage": "https://github.com/serenecotech/agent-skills",
+  "license": "MIT",
+  "keywords": ["writing", "readability", "documentation", "copy", "replies", "hooks"],
+  "skills": "./skills/"
+}
