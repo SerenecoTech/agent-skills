@@ -53,14 +53,13 @@ Use plain replacements. "Use" not "utilize." "Help" not "facilitate." "Try" not 
 
 ### 2. Vary Sentence Length (Burstiness)
 
-This is the single highest-impact humanization technique. AI detection tools use sentence length uniformity as a core metric.
+Uniform sentence length is the pattern readers notice first, and the one detection tools weight most. Every rule here is a count you can check on the draft, not a feel.
 
-- Mix short punches (3-8 words) with long compound sentences (25-35 words)
-- No three consecutive sentences within 5 words of each other in length
-- Aim for a standard deviation of 8+ words across sentence lengths in any given paragraph
-- Use fragments for emphasis. One word works. So do two.
-- Start 10-15% of sentences with "And" or "But"
-- Never start 3+ consecutive sentences with the same word
+- In every paragraph of three or more sentences, at least one sentence is under 8 words and at least one is over 20.
+- No three consecutive sentences within 5 words of each other in length.
+- Fragments are allowed for emphasis. One word works. So do two. At most one fragment per paragraph.
+- A sentence can open with "And" or "But" when the contrast is real. At most one such opener per paragraph, and never as a quota to fill.
+- Never start three or more consecutive sentences with the same word.
 
 ### 3. Eliminate Repetitive Sentence Patterns
 
@@ -71,12 +70,12 @@ This is the single highest-impact humanization technique. AI detection tools use
 
 ### 4. Break Structural Templates
 
-- Do not follow topic-sentence/elaboration/summary for every paragraph
-- Vary paragraph length (1-sentence paragraphs mixed with 5-6 sentence paragraphs)
-- No summary paragraphs that restate what was already said
-- Allow the point to arrive at the end sometimes, not always up front
-- Use parentheticals and asides where natural
-- Vary paragraph openings. Do not start every paragraph the same way (with a claim, a noun phrase, a prepositional phrase). Mix it up: start some with a question, some with a short fragment, some with a dependent clause, some mid-thought.
+- Do not follow topic-sentence/elaboration/summary for every paragraph.
+- In a piece of four or more paragraphs, at least one paragraph is a single sentence and no paragraph runs past six.
+- No summary paragraph that restates what was already said. The last paragraph carries new information or a single call to action.
+- Let the point arrive at the end in at least one paragraph, not in every one up front.
+- Use parentheticals and asides where natural.
+- No two consecutive paragraphs open with the same word, and no two consecutive paragraphs open with the same shape (claim, question, fragment, dependent clause).
 
 ### 5. Kill the Assistant Register
 
@@ -96,13 +95,14 @@ Per CMU/PNAS research, these are the hardest patterns to detect but the most sta
 
 ### 7. Calibrate Length to Format
 
-AI over-writes by default. Fight this aggressively.
+Models over-write by default. Set the budget before drafting and count against it after.
 
-- A Slack message should be a few sentences. Not three paragraphs.
-- A short email should be 3-5 sentences. Not a page.
-- A one-paragraph answer should stay one paragraph. Don't expand it to four.
-- Match the length the user would expect for the format. When in doubt, shorter is more human.
-- If the user asks for "a quick summary" or "a short note," that means short. Actually short.
+- A Slack message: at most 3 sentences, one paragraph.
+- A short email: 3 to 5 sentences.
+- A one-paragraph answer stays one paragraph.
+- A newsletter or launch announcement: the word count the user gave, within 10 percent. If they gave none, under 150 words.
+- "A quick summary" or "a short note": under 80 words.
+- When the format is unstated, take the shortest of the plausible formats.
 
 ## Workflow: Writing New Content
 
@@ -135,7 +135,31 @@ AI over-writes by default. Fight this aggressively.
    - Overused question-then-answer pattern
    - Sycophantic openings/closings
    - Output length appropriate for the format (emails short, Slack shorter)
-5. **Fix issues found** in the self-review before delivering.
+5. **Run the grep pass** below. Every hit is a rewrite, not a judgement call.
+6. **Fix issues found** before delivering.
+
+### Grep pass
+
+Search the draft for each pattern. The target for every line is zero hits unless the line says otherwise.
+
+| Pattern | Rule |
+| --- | --- |
+| `—`, `–` between spaces, ` -- ` | Banned punctuation |
+| `\b(delve\|tapestry\|landscape\|navigate\|leverage\|foster\|robust\|utilize\|nuanced\|multifaceted\|pivotal\|underscores?\|holistic\|synergy\|paradigm\|transformative\|groundbreaking\|cutting-edge\|harness\|streamline\|cornerstone\|encompass(es)?\|facilitates?\|moreover\|furthermore\|nevertheless\|myriad\|plethora\|ensures?\|respectively?)\b` | Banned vocabulary |
+| `(not just\|isn't just\|is not just\|more than just\|not only)` | False revelation |
+| `\b(truly\|really\|incredibly\|absolutely\|extremely)\b` | Hollow intensifiers, at most 1 hit per piece |
+| `\b(allows\|enables\|empowers) you to\b` | Product-copy default |
+| `^By [a-z]+ing` at sentence start | "By [gerund]" chain |
+| `, (making\|allowing\|enabling\|ensuring\|highlighting\|underscoring\|reflecting\|solidifying)\b` | Trailing participial |
+| `\b(significant\|substantial\|considerable\|notable\|meaningful)\b` with no number in the sentence | Weasel quantifier |
+| `^(Additionally\|Furthermore\|Moreover\|However\|Therefore\|Consequently\|Thus),` | Transition glue |
+| `;` | Semicolon, at most 1 per piece |
+| Three consecutive sentences starting with the same word | Anaphora chain |
+| Three consecutive sentences whose word counts are within 5 of each other | Uniform length |
+| `^(Great\|Sure\|Certainly\|Absolutely\|Let me\|Here's\|Here is)` on the first line | Assistant opener |
+| `(In summary\|In conclusion\|Overall,\|To sum up)` | Summary closer |
+
+The word count must also land within the budget set in rule 7.
 
 ## Workflow: Editing Existing Text
 
@@ -245,13 +269,13 @@ These show common AI patterns and how to fix them. Learn the transformations, no
 
 ## When Rules Conflict
 
-These rules will sometimes pull in opposite directions. Here's how to resolve that:
+These rules will sometimes pull in opposite directions. Resolve them in this order:
 
-- **Fragments vs. clarity:** Use fragments for emphasis and rhythm, but not if they make the meaning unclear. A fragment that confuses the reader is worse than a complete sentence that bores them.
-- **"And/But" starters vs. varied openings:** The 10-15% guideline for "And" and "But" starters is a tool for variety, not a quota. If you've already varied your openings well, you don't need to force an "And" in.
-- **Short sentences vs. burstiness:** Short punches work because they contrast with longer sentences. Five short sentences in a row isn't burstiness. It's choppy.
-- **Avoiding banned patterns vs. natural flow:** If removing a banned construction makes the sentence awkward or unclear, find a third option. The goal isn't to mechanically avoid a checklist. The goal is to sound like a person.
-- **General principle:** When two rules conflict, choose whichever option sounds more like something a human would actually write. Read it out loud. If it sounds weird, it is weird.
+- **Fragments vs. clarity:** A fragment that leaves the meaning unclear loses. Rewrite it as a full sentence.
+- **"And/But" starters vs. varied openings:** The opener is a tool for contrast, not a quota. If the paragraph already varies its openings, leave it out.
+- **Short sentences vs. burstiness:** Short punches work because they contrast with longer sentences. Five short sentences in a row is not burstiness. It is choppy, and it fails the same-length check.
+- **Avoiding banned patterns vs. natural flow:** If removing a banned construction makes the sentence awkward, find a third phrasing. Reintroducing the banned pattern is not an option.
+- **Tiebreaker:** When two candidate sentences both pass the grep pass, keep the shorter one. When neither passes, rewrite until one does. Do not resolve a conflict by judging which "sounds more human"; that judgement is what produced the pattern in the first place.
 
 ## What NOT to Do
 

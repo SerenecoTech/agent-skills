@@ -1,0 +1,1 @@
+Write a newsletter launch announcement for the handoff plugin, about 120 words. It writes a HANDOFF.md file capturing your goal and progress before you clear context, and resumes it in a new session so you don't have to re-explain the task. Make it casual and direct, make it sound like me. Output only the text.
