@@ -1,0 +1,5 @@
+My CI job "version bumped when a plugin changed" keeps failing after I edited a README inside plugins/handoff. What is going on and what should I do?
+
+Context: the check compares each changed plugin directory's plugin.json version against the base branch and fails if unchanged; the escape hatch is putting [skip bump] in the commit message.
+
+Answer from the context given, as you would in chat. Do not inspect any files or run any commands.
