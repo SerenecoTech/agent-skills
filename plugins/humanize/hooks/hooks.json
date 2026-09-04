@@ -1,0 +1,18 @@
+{
+  "description": "Injects rules/reply-clarity.md at session start so replies written for a person follow the plugin's reply rules. Fails open: any error exits 0 and the session starts without the rules.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/reply-clarity.sh\"",
+            "timeout": 5,
+            "statusMessage": "Loading reply-clarity rules"
+          }
+        ]
+      }
+    ]
+  }
+}
