@@ -14,13 +14,15 @@ on:
   workflow_dispatch:
     inputs:
       plugin:
-        description: 'Plugin directory name (adversarial-review, guard-hooks, handoff)'
+        description: 'Plugin directory name (adversarial-review, check-compound-bash, guard-hooks, handoff, humanize)'
         required: true
         type: choice
         options:
           - adversarial-review
+          - check-compound-bash
           - guard-hooks
           - handoff
+          - humanize
       dry_run:
         description: 'Print what would be tagged and stop'
         required: false

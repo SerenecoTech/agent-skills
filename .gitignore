@@ -14,3 +14,7 @@
 # Handoffs are working state, not repo content
 HANDOFF.md
 .claude/handoff/
+
+# BEGIN mortar-sandbox
+.sandbox
+# END mortar-sandbox

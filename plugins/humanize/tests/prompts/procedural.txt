@@ -1,0 +1,9 @@
+Write a 6-step how-to section for a README that walks a new user through installing a plugin marketplace, installing a plugin from it, restarting Claude Code, checking plugin status, updating the plugin, and uninstalling it. Use these exact real commands where they apply:
+
+claude plugin marketplace add serenecotech/agent-skills
+claude plugin install handoff@sereneco
+claude plugin list
+claude plugin update handoff@sereneco
+claude plugin uninstall handoff@sereneco
+
+Step 1 adds the marketplace, step 2 installs the plugin, step 3 restarts Claude Code so the plugin loads, step 4 checks that it installed, step 5 updates it, step 6 removes it. Output only the markdown.
