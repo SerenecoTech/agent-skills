@@ -1,0 +1,11 @@
+{
+  "name": "check-compound-bash",
+  "description": "PreToolUse hook that splits compound Bash commands (pipes, &&, ;, subshells, substitutions, bash -c) into their sub-commands with shfmt and checks each one against the Bash(...) allow and deny rules in your Claude Code settings. Auto-approves when every segment is allowed, denies when any segment is denied, and otherwise falls through to the native permission prompt.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Sereneco"
+  },
+  "homepage": "https://github.com/serenecotech/agent-skills",
+  "license": "MIT",
+  "keywords": ["hooks", "permissions", "bash", "shfmt", "allowlist"]
+}
