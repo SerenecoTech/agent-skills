@@ -1,7 +1,7 @@
 {
   "name": "guard-hooks",
   "description": "Security guardrails enforced by hooks: deny dangerous shell commands and privilege escalation, block writes to credential files and system directories, refuse to read a file that holds a live credential, refuse to print a credential-bearing environment variable, detect secrets in written content, pre-approve provably-safe rm of in-project files, enforce the project's declared package manager, block a PR merge whose checks failed or never ran and a branch deletion that would discard someone else's work, warn on destructive git operations, and raise an alarm when a credential reaches the transcript anyway.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": {
     "name": "Sereneco"
   },
