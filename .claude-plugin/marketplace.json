@@ -38,7 +38,7 @@
       "source": "./plugins/guard-hooks",
       "displayName": "Guard Hooks",
       "description": "Security guardrails as hooks: block dangerous shell commands, writes to credential files and system paths, and secrets in file content; refuse to read a file holding a live credential or to print a credential-bearing environment variable; pre-approve provably-safe rm; enforce the project's package manager; block PR merges whose checks failed or never ran and branch deletions that would discard someone else's work; warn on destructive git operations; alarm if a credential reaches the transcript anyway.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "author": {
         "name": "Sereneco"
       },
@@ -67,7 +67,14 @@
         "name": "Sereneco"
       },
       "category": "writing",
-      "keywords": ["writing", "readability", "documentation", "copy", "replies", "hooks"]
+      "keywords": [
+        "writing",
+        "readability",
+        "documentation",
+        "copy",
+        "replies",
+        "hooks"
+      ]
     }
   ]
 }

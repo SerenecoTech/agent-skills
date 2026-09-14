@@ -52,8 +52,6 @@ test_bash_guard "Block sudo after &&"           "ls && sudo reboot"             
 test_bash_guard "Block sudo after pipe"         "echo hi | sudo tee /etc/cron.d/x"      true
 test_bash_guard "Block su command"              "su root"                                true
 test_bash_guard "Block doas"                    "doas rm -rf /var"                       true
-# NOTE: echo 'run sudo to escalate' — normalisation strips quotes so sudo is
-# detected as a command. This is an accepted limitation of text-pattern matching.
 test_bash_guard "Allow sudoku (partial match)"  "which sudoku"                           false
 
 echo ""
@@ -143,6 +141,42 @@ test_bash_guard "Allow cat source file"        "cat src/main.js"                
 test_bash_guard "Allow curl API call"          "curl -X GET https://api.example.com/health" false
 test_bash_guard "Allow docker build"           "docker build -t myapp ."                false
 test_bash_guard "Allow pytest"                 "python -m pytest tests/"                false
+
+echo ""
+echo "=== 11. Data Is Not A Command ==="
+# A word in a heredoc body, a quoted string or a search pattern is data.
+test_bash_guard "Allow prose in a heredoc"     $'cat >> notes.md <<\'DOC\'\nThe guard denied a sudo audit.\nDOC' false
+test_bash_guard "Allow prose in echo"          'echo "the sudo pattern is unanchored"'  false
+test_bash_guard "Allow sudo as grep pattern"   "grep -rn sudo hooks/"                   false
+test_bash_guard "Allow sudo in commit message" 'git commit -m "docs: explain sudo handling"' false
+test_bash_guard "Allow su in a sentence"       'echo "the su command escalates"'        false
+test_bash_guard "Allow auditing the guard"     "grep -n sudo hooks/bash-guard.sh"       false
+test_bash_guard "Allow cat .env.default"       "cat .env.default"                       false
+test_bash_guard "Allow cat .env.example"       "cat .env.example"                       false
+test_bash_guard "Allow grep for .env in src"   'grep -rn "\.env" src/'                  false
+test_bash_guard "Allow mention after read cmd" 'head -5 README.md && echo "docs list .env"' false
+test_bash_guard "Block .env.local still"       "cat .env.local"                         true
+test_bash_guard "Block .env.production still"  "cat .env.production"                    true
+test_bash_guard "Block .envrc still"           "cat .envrc"                             true
+
+echo ""
+echo "=== 12. Command Position, Not Substring ==="
+test_bash_guard "Block quoted command word"    '"sudo" rm -rf /etc'                     true
+test_bash_guard "Block split quoting"          '"s""udo" rm -rf /etc'                   true
+test_bash_guard "Block backslash escape"       's\udo rm -rf /etc'                      true
+test_bash_guard "Block absolute path to sudo"  "/usr/bin/sudo id"                       true
+test_bash_guard "Block leading assignment"     "FOO=1 sudo id"                          true
+test_bash_guard "Block brace group"            "{ sudo id; }"                           true
+test_bash_guard "Block command substitution"   'echo "$(sudo id)"'                      true
+test_bash_guard "Block backtick substitution"  'echo `sudo id`'                         true
+test_bash_guard "Block bash -c"                'bash -c "sudo id"'                      true
+test_bash_guard "Block bash -c, not first"     'bash -c "echo hi; sudo id"'             true
+test_bash_guard "Block xargs sudo"             "echo x | xargs sudo id"                 true
+test_bash_guard "Block find -exec sudo"        "find . -exec sudo rm {} +"              true
+test_bash_guard "Block eval string"            'eval "sudo id"'                         true
+test_bash_guard "Block code after heredoc end" $'cat <<EOF\nfoo\nEOF\nsudo id'          true
+test_bash_guard "Block cred in quoted path"    'cat "$HOME/.env"'                       true
+test_bash_guard "Block cred single-quoted"     "cat './.env'"                           true
 
 echo ""
 echo "========================================"
