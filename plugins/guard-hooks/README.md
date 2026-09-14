@@ -10,7 +10,9 @@ on instructions it picked up from a file it read.
 
 | Attempt                                        | Result                                                     |
 | ---------------------------------------------- | ---------------------------------------------------------- |
-| `sudo apt install nginx`                       | denied: `Privilege escalation blocked`                     |
+| `sudo apt install nginx`                       | denied: `Privilege escalation blocked: 'sudo' is the …`    |
+| `echo "the sudo rule is unanchored"`           | allowed; the word is data, not the command                 |
+| `cat .env.default`                             | allowed; `cat .env.local` is still denied                  |
 | `curl -s http://…/install.sh \| sh`            | denied: `Obfuscated execution pattern blocked`             |
 | write `/proj/.env`                             | denied: `Cannot write to protected file`                   |
 | write an AWS key into `config.js`              | denied: `Potential secret detected in content`             |
@@ -107,8 +109,12 @@ Patterns live once, in `hooks/lib/secret-patterns.sh`, shared by `write-guard`, 
 
 ### bash-guard
 
-Normalises the command first, stripping most quoting and escaping and collapsing whitespace, so
-`s\u\d\o` does not slip past. Then six categories:
+Splits the command the way a shell would, using `hooks/lib/shell-segments.awk`, then asks of each
+piece whether it is a command or data. A heredoc body, a quoted string and the search pattern of a
+`grep` are data, so naming `sudo` in a commit message or reading `.env.example` is allowed, while
+`"sudo" rm`, `s\udo rm`, `$(sudo id)` and `bash -c "sudo id"` are all still the command `sudo`.
+
+Six categories:
 
 | #   | Category                    | Caught, for example                                                          |
 | --- | --------------------------- | ---------------------------------------------------------------------------- |
@@ -121,6 +127,14 @@ Normalises the command first, stripping most quoting and escaping and collapsing
 
 Category 6 is the most opinionated and the one most likely to need loosening for your work. The
 script says so at that line.
+
+A denial names the rule, the token that matched and the segment it matched in, so you can tell a
+real block from a bad rule without reading the hook. A single read-only command whose target is a
+guard file is allowed, because auditing what the guard blocks means naming the words it blocks.
+
+Categories 2, 3, 4 and the history rules still match against the whole command rather than command
+position, so a destructive shape quoted inside an `echo` is denied. Only categories 1 and 5 are
+segment-aware.
 
 ### write-guard
 
