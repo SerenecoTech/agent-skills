@@ -8,15 +8,27 @@ services:
       egress:
         ipv4_address: 172.31.99.122
     volumes:
+      # Mortar's own shims, over the names this project's image gave the real
+      # tools. This project builds from its own committed Dockerfile, which
+      # mortar never refreshes, so nothing mortar adds to the image reaches it.
+      # Read-only, which is what root ownership gives a managed repo: an agent
+      # in the container cannot replace a shim and reach the real tool.
+      # memsearch refuses index, watch and reset - memory is written here as
+      # markdown, summarised on the host, and read back through the bridge.
+      - /Users/david/.config/mortar/shims/memsearch:/usr/local/py-utils/bin/memsearch:ro
       # The machine's ONE Claude credential holder (DECISION-018), read-write
       # and as a DIRECTORY: Claude Code writes the credential by rename, which
       # a single-file bind cannot take, and a container that cannot refresh
       # loses its session when the access token expires.
       - /Users/david/.config/mortar/claude:/home/vscode/.config/mortar/claude
-      # The host's own Codex credential, read-write and as a single FILE: codex
-      # truncates auth.json in place, and binding the ~/.codex holding it would
-      # carry every other project's session history and sqlite logs in with it.
-      - /Users/david/.codex/auth.json:/home/vscode/.codex/auth.json
+      # The machine's Codex credential, read-write and as a DIRECTORY holding one
+      # hard link to the host's own auth.json: codex UNLINKS the credential on
+      # login and on logout, and a single-file bind pins its source inode at
+      # container creation, so after an unlink such a mount reads as missing
+      # inside a running container (ISSUE-040). A directory bind pins nothing.
+      # projects/<p>/codex/auth.json is a symlink into this, so the container's
+      # own Codex home still holds that project's history and nothing else.
+      - /Users/david/.config/mortar/codex:/home/vscode/.config/mortar/codex
     environment:
       # Where Claude Code reads and writes the credential in this container:
       # the bound machine holder, the same directory the host's export
