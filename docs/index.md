@@ -1,7 +1,8 @@
 # Sereneco agent skills documentation
 
 The shared skills and Claude Code plugins in this repository: `adversarial-review`, `handoff`,
-`guard-hooks`, and the skills under [`skills/`](../skills/).
+`guard-hooks`, `check-compound-bash`, `humanize`, and the standalone skills under
+[`skills/`](../skills/), currently `mac-design-explore`.
 
 `README.md` at the repository root is the entry point for what each plugin does and how to install
 it. This page is the documentation home: it says which collections exist and what lives where.
