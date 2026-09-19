@@ -2,7 +2,8 @@
 
 Five Claude Code plugins: hostile code review, session handoff, security guard hooks, fewer
 permission prompts for compound shell commands, and writing skills for text that does not read as
-AI-generated.
+AI-generated. Plus one standalone skill, `mac-design-explore`, which compares native macOS
+interfaces by building and screenshotting them.
 
 Bash and Markdown throughout. Nothing to build, nothing to compile.
 
@@ -18,6 +19,17 @@ claude plugin install humanize@sereneco
 ```
 
 Or run `/plugin` in Claude Code and browse.
+
+The standalone skill is not a plugin, so it installs with the
+[skills CLI](https://github.com/vercel-labs/skills) instead:
+
+```bash
+npx skills add serenecotech/agent-skills --skill mac-design-explore
+```
+
+Add `-g` to install into `~/.claude/skills/` rather than the current project, and `-a claude-code -y`
+to skip the prompts. `npx skills add serenecotech/agent-skills --list` shows everything in this
+repository, the plugin-bundled skills included, and `--skill` takes any name from that list.
 
 **Restart Claude Code afterwards.** Skills work immediately, but hooks load only at session start,
 so `adversarial-review`, `guard-hooks`, `check-compound-bash` and the `humanize` reply rules sit
@@ -52,6 +64,15 @@ A session-start hook loads the reply rules, so answers in the conversation follo
 
 Each plugin has its own README.
 
+## The standalone skill
+
+**[mac-design-explore](skills/mac-design-explore/)** — say "explore alternatives for this sidebar"
+and it builds several SwiftUI or AppKit versions of the same screen, runs them, captures real
+screenshots, and walks the same task through each. It reports build, render, inspection and
+interaction as four separate states, so a compiled direction nobody looked at is never presented as
+verified. Install it with `npx skills add serenecotech/agent-skills --skill mac-design-explore`, or
+copy the folder into `~/.claude/skills/`. There is no plugin to install.
+
 ## Requirements
 
 | Plugin | Needs |
@@ -61,6 +82,7 @@ Each plugin has its own README.
 | guard-hooks | `jq` ≥ 1.6, `bash` ≥ 4, `git`, coreutils. `gh` for the GitHub merge rules. |
 | check-compound-bash | `shfmt`, `jq` ≥ 1.6, `bash` ≥ 4.3. Without `shfmt` or `jq` it does nothing and the normal prompt appears. |
 | humanize | `sh`. The skills need nothing. |
+| mac-design-explore (skill) | macOS with a Swift toolchain, `swift` or `xcodebuild`. A window capture tool such as `peek`, and an image-reading tool, for the visual checks. Without those it compiles and reports capture as blocked. |
 
 ## Layout
 
@@ -68,7 +90,11 @@ Each plugin has its own README.
 .claude-plugin/marketplace.json    marketplace manifest
 plugins/                           Claude Code plugins; hooks require this format
 skills/                            standalone skills, no harness dependency
+skills/mac-design-explore/         SKILL.md, README.md, references/peek.md
 ```
+
+`npx skills add` copies a skill directory wholesale, so a skill directory holds only what an
+installer needs.
 
 Skills inside the plugins are ordinary `SKILL.md` files with YAML frontmatter, so you can symlink
 one into another agent's skills directory instead of installing the plugin. `handoff`,
