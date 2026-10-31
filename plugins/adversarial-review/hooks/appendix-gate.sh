@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse: Bash — fires only on a codex invocation.
+# PreToolUse: Bash — fires only on a reviewer call (see is_reviewer_call).
 #
 # Ensures a previous review's refutation appendix is ingested before a new review begins.
 #
@@ -16,10 +16,7 @@ read_event
 
 CMD="$(printf '%s' "$HOOK_JSON" | jq -r '.tool_input.command // empty')"
 [ -n "$CMD" ] || exit 0
-case "$CMD" in
-  *"codex exec"*) ;;
-  *) exit 0 ;;
-esac
+is_reviewer_call "$CMD" || exit 0
 
 require_active_review
 
@@ -30,7 +27,7 @@ APPENDIX="$(state_get '.appendix')"
 [ -n "$APPENDIX" ] || exit 0
 case "$APPENDIX" in
   /*) APPENDIX_ABS="$APPENDIX" ;;
-  *)  APPENDIX_ABS="$CWD/$APPENDIX" ;;
+  *)  APPENDIX_ABS="$ROOT/$APPENDIX" ;;
 esac
 # No prior appendix means no prior review of this artefact. Nothing to carry forward.
 [ -s "$APPENDIX_ABS" ] || exit 0
@@ -43,7 +40,7 @@ TRUNC=""
 [ "$(wc -c < "$APPENDIX_ABS" | tr -d ' ')" -gt 4000 ] && TRUNC=$'\n\n[truncated — read the file in full before relying on it]'
 
 log_gate appendix "DENY (unread appendix, ${LINES} lines) $APPENDIX"
-deny "A refutation appendix from a previous review of this artefact exists at '$APPENDIX' ($LINES lines) and has not been ingested this session. Read it, then set .appendix_read = true in .claude/adversarial-review/state.json before invoking codex." \
+deny "A refutation appendix from a previous review of this artefact exists at '$APPENDIX' ($LINES lines) and has not been ingested this session. Read it, then set .appendix_read = true in .claude/adversarial-review/state.json before invoking the reviewer." \
 "Previously refuted findings and their falsifiers follow. A refutation is only binding while its falsifier still holds — re-check each one against current state, and reopen any whose falsifier has stopped holding rather than treating it as settled.
 
 --- $APPENDIX ---

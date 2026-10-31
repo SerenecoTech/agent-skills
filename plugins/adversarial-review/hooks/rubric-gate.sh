@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse: Bash — fires only on a codex invocation.
+# PreToolUse: Bash — fires only on a reviewer call (see is_reviewer_call).
 #
 # Validates rubric integrity before a review round runs.
 #
@@ -17,10 +17,7 @@ read_event
 
 CMD="$(printf '%s' "$HOOK_JSON" | jq -r '.tool_input.command // empty')"
 [ -n "$CMD" ] || exit 0
-case "$CMD" in
-  *"codex exec"*) ;;
-  *) exit 0 ;;
-esac
+is_reviewer_call "$CMD" || exit 0
 
 require_active_review
 
@@ -50,7 +47,7 @@ if [ -n "$DUPES" ]; then
   FIRST="$(printf '%s' "$DUPES" | head -1)"
   log_gate rubric "DENY (near-duplicate probes: $FIRST)"
   deny "Rubric integrity check failed: near-duplicate probes detected ($FIRST). Alternating semantically identical probe ids satisfies the convergence rule mechanically while examining nothing new, so the round would count toward convergence dishonestly." \
-       "Merge or genuinely differentiate the duplicated probes in the rubric before invoking codex. If they really do test different things, make the descriptions say how."
+       "Merge or genuinely differentiate the duplicated probes in the rubric before invoking the reviewer. If they really do test different things, make the descriptions say how."
 fi
 
 # Advisory only: remind of the convergence rule with the preceding round's probes, since the
@@ -61,7 +58,7 @@ if [ -n "$PREV" ]; then
   jq -nc --arg p "$PREV" '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      additionalContext: ("Convergence rule: this round must use at least one probe id absent from the previous round (" + $p + "), and must re-run every probe whose findings were fixed since it last ran. Exception: if the previous round used every id in the rubric, a full-artefact candidate-final pass counts without a new one. Record probes_run in the output.")
+      additionalContext: ("Convergence rule: this round must use at least one probe id absent from the previous round (" + $p + "), and must re-run every probe whose substantive findings were fixed since it last ran. Exception: if the previous round used every id in the rubric, a full-artefact candidate-final pass counts without a new one. Record probes_run in the output.")
     }
   }'
 fi

@@ -13,8 +13,8 @@
       "name": "adversarial-review",
       "source": "./plugins/adversarial-review",
       "displayName": "Adversarial Review",
-      "description": "Adversarial code, architecture and specification review using OpenAI Codex as a second hostile reviewer, with PreToolUse hooks enforcing write-path authorisation, refutation-appendix ingestion and rubric integrity.",
-      "version": "0.1.2",
+      "description": "Adversarial code, architecture and specification review using a second hostile reviewer (OpenAI Codex when available, otherwise a separate Claude Opus process), with PreToolUse hooks enforcing write-path authorisation, refutation-appendix ingestion, and rubric integrity.",
+      "version": "0.2.0",
       "author": {
         "name": "Sereneco"
       },
@@ -38,7 +38,7 @@
       "source": "./plugins/guard-hooks",
       "displayName": "Guard Hooks",
       "description": "Security guardrails as hooks: block dangerous shell commands, writes to credential files and system paths, and secrets in file content; refuse to read a file holding a live credential or to print a credential-bearing environment variable; pre-approve provably-safe rm; enforce the project's package manager; block PR merges whose checks failed or never ran and branch deletions that would discard someone else's work; warn on destructive git operations; alarm if a credential reaches the transcript anyway.",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "author": {
         "name": "Sereneco"
       },
@@ -50,7 +50,7 @@
       "source": "./plugins/check-compound-bash",
       "displayName": "Check Compound Bash",
       "description": "PreToolUse hook that splits compound Bash commands into their sub-commands with shfmt and checks each against your Bash(...) allow and deny rules: auto-approves when every segment is allowed, denies when any segment is denied, otherwise falls through to the native prompt.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Sereneco"
       },

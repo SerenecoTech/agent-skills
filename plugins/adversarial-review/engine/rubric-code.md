@@ -56,15 +56,10 @@ full coverage.
 The caps are arguable. Arguable and written down beats unarguable and absent — revisit them
 against real truncation logs once this has run on real targets.
 
-## Preferred invocation
+## Naming the target
 
-The native `codex exec review` resolves the target itself, and `--uncommitted` includes
-untracked files — a hand-written "staged and unstaged" description omits them, so a brand-new
-source file gets no review.
-
-But a target flag and a prompt cannot be passed together, and the engine requires a per-round
-brief. So the brief wins: pass it on stdin with **no** target flag and name the target in the
-brief itself, or use the general `codex exec` form and have the reviewer run `git status` and
-`git diff` for itself. Either way, state in the brief that untracked files are in scope —
-that is the one thing `--uncommitted` was buying, and describing the target by hand is exactly
-where it gets dropped. See `invocation.md` for the measured command lines.
+Name the target in the brief and have the reviewer run `git status` and `git diff` for itself.
+Both reviewers can: Codex through its shell, Claude through its read-only `git` allowlist.
+State in the brief that untracked files are in scope — a hand-written "staged and unstaged"
+description omits them, so a brand-new source file gets no review. See `invocation.md` for
+how the call is made.

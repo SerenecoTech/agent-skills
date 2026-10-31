@@ -16,7 +16,7 @@
 set -euo pipefail
 
 # Fail-closed: if anything errors, deny by default
-trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Hook error - fail-closed\"}}"; exit 0' ERR
+trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"bash-guard.sh failed at line $LINENO while checking this command, and it denies when it fails. No rule matched the command: this is a fault in the hook, not a block of the command.\"}}"; exit 0' ERR
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SEGMENTER="$HOOK_DIR/lib/shell-segments.awk"
@@ -129,73 +129,105 @@ for i in "${!seg_cmd[@]}"; do
 done
 
 # === 2. Destructive file operations ==========================================
+# Pairs: pattern, then the reason the deny message gives for it.
 destructive_patterns=(
     # Recursive force removal — handle both -rf and -fr flag orderings,
     # block root, home, and named system directories; allow /tmp
     'rm[[:space:]]+-[^[:space:]]*(rf|fr)[^[:space:]]*[[:space:]]+/($|[[:space:]])'
+    'recursive force removal of the filesystem root'
     'rm[[:space:]]+-[^[:space:]]*(rf|fr)[^[:space:]]*[[:space:]]+/(etc|usr|var|home|root|boot|lib|bin|sbin|opt|proc|sys)(/|[[:space:]]|$)'
+    'recursive force removal of a system directory'
     'rm[[:space:]]+-[^[:space:]]*(rf|fr)[^[:space:]]*[[:space:]]+~'
+    'recursive force removal of the home directory'
     'rm[[:space:]]+-[^[:space:]]*(rf|fr)[^[:space:]]*[[:space:]]+\*'
+    'recursive force removal of a bare glob, which deletes everything in the working directory'
     'rm[[:space:]]+-[^[:space:]]*(rf|fr)[^[:space:]]*[[:space:]]+\.($|[[:space:]])'
+    'recursive force removal of the working directory'
 
     # Device writes — only block writes TO devices, not reads FROM them
     # (e.g. dd if=/dev/urandom is a safe read; dd of=/dev/sda is destructive)
     '(^|[[:space:];|&])dd[[:space:]].*of=/dev/'
+    'dd writing to a device'
     '(^|[[:space:];|&])(fdisk|parted|gdisk)[[:space:]].*(/dev|of=)'
+    'repartitioning a disk'
     '(^|[[:space:];|&])mkfs[^[:space:]]*[[:space:]]'   # any mkfs variant (mkfs.ext4, mkfs.vfat, …)
+    'formatting a filesystem'
     '>[[:space:]]*/dev/(sd|nvme|hd)'
+    'redirecting output onto a disk device'
 
     # Data destruction
     '(shred|wipe|wipefs|scrub)[[:space:]]'
+    'unrecoverable data destruction'
     'truncate[[:space:]]+-s[[:space:]]*0'
+    'truncating a file to zero bytes'
 
     # Permission bombs
     'chmod[[:space:]]+-R[[:space:]]*777'
+    'recursively making files world-writable'
     'chmod[[:space:]].*[+][sg]'   # setuid (+s) and setgid (+g)
+    'setting the setuid or setgid bit'
 
     # Fork bombs
     ':\(\)[[:space:]]*\{[[:space:]]*:'
+    'a fork bomb'
 )
 
-for pattern in "${destructive_patterns[@]}"; do
+for ((j = 0; j < ${#destructive_patterns[@]}; j += 2)); do
+    pattern="${destructive_patterns[j]}"
     if match=$(printf '%s' "$flat" | grep -oE "$pattern" | head -1) && [ -n "$match" ]; then
-        deny "Destructive operation blocked: matched '$(snippet "$match")'"
+        deny "Destructive operation blocked (${destructive_patterns[j+1]}): matched '$(snippet "$match")'"
     fi
 done
 
 # === 3. Dangerous git operations =============================================
-# Block force operations on protected branches
-if echo "$command" | grep -qE 'git[[:space:]]+push[[:space:]]+.*--force'; then
-    if echo "$command" | grep -qE '(main|master|production|prod)'; then
-        deny "Force push to protected branch blocked"
+# Block force operations on protected branches. The branch has to be a whole
+# word in the same segment as the push: a bare name, a refspec destination
+# (HEAD:main, +main) or refs/heads/main. `feature/maintenance` is not `main`,
+# and a later `git checkout main` is not part of the push.
+PROTECTED_REF_RE='(^|[[:space:]:+]|refs/heads/)(main|master|production|prod)([[:space:];&|)]|$)'
+
+for i in "${!seg_cmd[@]}"; do
+    printf '%s' "${seg_cmd[$i]}" | grep -qE 'git[[:space:]]+push[[:space:]]+.*--force' || continue
+    if ref=$(printf '%s' "${seg_cmd[$i]}" | grep -oE "$PROTECTED_REF_RE" | head -1) && [ -n "$ref" ]; then
+        branch=$(printf '%s' "$ref" | grep -oE 'main|master|production|prod' | head -1)
+        deny "Force push blocked: '$branch' is a protected branch (main, master, production, prod) in: $(snippet "${seg_orig[$i]}")"
     fi
-fi
+done
 
 # === 4. Indirect execution / obfuscation =====================================
+# Pairs: pattern, then the reason the deny message gives for it.
 obfuscation_patterns=(
     # Pipe to shell
     '(curl|wget|fetch)[^|]*\|[[:space:]]*(ba)?sh'
+    'downloaded code piped straight into a shell runs without being read; save it to a file, read it, then run it'
 
     # Base64 decode to shell
     'base64[[:space:]]+-d[^|]*\|[[:space:]]*(ba)?sh'
+    'decoded base64 piped into a shell runs code that cannot be read first'
 
     # Eval with variables (potential code injection)
     'eval[[:space:]]+(\$|`)'
+    'eval of a variable or substitution runs code that is only known at run time'
 
     # Bash process substitution
     '(bash|sh)[[:space:]]+<\('
+    'a shell reading its script from process substitution runs code that cannot be read first'
 
     # Awk/sed system execution
     '(awk|sed)[^;]*system[[:space:]]*\('
+    'awk or sed calling system() runs shell commands outside these checks'
 
     # Hex/octal encoding
     '\\x[0-9a-f]{2}'
+    'hex escapes can hide a command from these checks; write the characters literally'
     '\$\\[0-7]{3}'
+    'octal escapes can hide a command from these checks; write the characters literally'
 )
 
-for pattern in "${obfuscation_patterns[@]}"; do
+for ((j = 0; j < ${#obfuscation_patterns[@]}; j += 2)); do
+    pattern="${obfuscation_patterns[j]}"
     if match=$(printf '%s' "$command" | grep -oiE "$pattern" | head -1) && [ -n "$match" ]; then
-        deny "Obfuscated execution pattern blocked: matched '$(snippet "$match")'"
+        deny "Obfuscated execution blocked: matched '$(snippet "$match")': ${obfuscation_patterns[j+1]}"
     fi
 done
 
@@ -289,7 +321,7 @@ history_patterns=(
 
 for pattern in "${history_patterns[@]}"; do
     if match=$(printf '%s' "$command" | grep -oE "$pattern" | head -1) && [ -n "$match" ]; then
-        deny "History manipulation blocked: matched '$(snippet "$match")'"
+        deny "History manipulation blocked (clearing or disabling shell history hides what ran): matched '$(snippet "$match")'"
     fi
 done
 

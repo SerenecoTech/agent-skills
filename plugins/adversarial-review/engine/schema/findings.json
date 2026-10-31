@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Adversarial review findings",
-  "description": "Passed to every codex call via --output-schema. Prose output is never parsed.",
+  "description": "Passed to every reviewer call by run-reviewer.sh: codex --output-schema, or claude --json-schema with the $schema key removed. Prose output is never parsed.",
   "type": "object",
   "additionalProperties": false,
   "required": [

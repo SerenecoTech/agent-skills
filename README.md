@@ -42,8 +42,9 @@ marketplace.
 ## What each one does
 
 **[adversarial-review](plugins/adversarial-review/)** — say "review my changes" or "poke holes in
-this spec" and OpenAI Codex reviews it as a hostile second opinion. Codex finds problems, Claude
-fixes them, and Codex never writes to your repository.
+this spec" and a second model reviews it as a hostile second opinion: OpenAI Codex when it is
+installed, otherwise a separate Claude Opus process. The reviewer finds problems, Claude fixes
+them, and the reviewer never writes to your repository.
 
 **[handoff](plugins/handoff/)** — say "handoff" before `/clear` and it writes `HANDOFF.md`. Say
 "resume" in a fresh session and it picks the work back up without you re-explaining anything.
@@ -77,7 +78,7 @@ copy the folder into `~/.claude/skills/`. There is no plugin to install.
 
 | Plugin | Needs |
 |---|---|
-| adversarial-review | `codex` ≥ 0.146.0 (authenticated), `jq` ≥ 1.6, `bash` ≥ 4, `git`, `shuf`, coreutils. `gh` only for reviewing a PR by number. |
+| adversarial-review | `codex` ≥ 0.146.0 (authenticated) preferred, else `claude` as the reviewer; `jq` ≥ 1.6, `bash` ≥ 4, `git`, `shuf`, coreutils. `gh` only for reviewing a PR by number. |
 | handoff | `git`. |
 | guard-hooks | `jq` ≥ 1.6, `bash` ≥ 4, `git`, coreutils. `gh` for the GitHub merge rules. |
 | check-compound-bash | `shfmt`, `jq` ≥ 1.6, `bash` ≥ 4.3. Without `shfmt` or `jq` it does nothing and the normal prompt appears. |

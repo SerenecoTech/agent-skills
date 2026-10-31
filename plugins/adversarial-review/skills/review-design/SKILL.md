@@ -1,8 +1,9 @@
 ---
 name: review-design
 description: >
-  Adversarially review an idea, architecture, design decision, spec or plan, using OpenAI
-  Codex as a second, hostile reviewer. Trigger when the user asks to critique, evaluate,
+  Adversarially review an idea, architecture, design decision, spec or plan, using a second,
+  hostile reviewer: OpenAI Codex when it is available, otherwise a separate Claude Opus
+  process. Trigger when the user asks to critique, evaluate,
   sanity-check, stress-test or debate any concept, design doc, RFC, proposal, specification,
   plan or requirements — even without mentioning Codex or "adversarial". Also applies to "is
   this a good idea?", "what are the risks of this approach?", "poke holes in this", "review
@@ -19,7 +20,7 @@ A front door. All mechanics live in the engine — read
 ## Resolve the target
 
 The user may give file paths, inline prose describing the idea, or both. Note the paths; you
-will point codex at them by absolute path, never by pasting their contents.
+will point the reviewer at them by absolute path, never by pasting their contents.
 
 If nothing was provided: `No concept provided. Pass a description, file paths, or both.`
 
@@ -35,6 +36,8 @@ a file first.
    door fired gives the same artefact a different review.
 2. Follow the engine: loop shape, scope gate, rounds, convergence, output.
 3. Default to the **verdict loop**. Enter the fix loop only on an explicit grant to edit.
+4. Make every reviewer call through `run-reviewer.sh`, never `codex` or `claude -p` directly.
+   It chooses the reviewer, and its flags keep a Claude call out of the session list.
 
 ## Watch for
 

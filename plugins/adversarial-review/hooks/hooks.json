@@ -42,6 +42,19 @@
           }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/verification-recorder.sh\"",
+            "timeout": 5,
+            "statusMessage": "Recording verification evidence"
+          }
+        ]
+      }
     ]
   }
 }

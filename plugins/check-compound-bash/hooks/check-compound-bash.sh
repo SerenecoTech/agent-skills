@@ -40,6 +40,9 @@ if [[ "${BASH_VERSINFO[0]}" -lt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VE
 fi
 
 DEBUG=false
+# Set by the matchers to the rule that matched, for the deny message.
+match_reason=""
+denied_report=""
 readonly ALLOW_JSON='{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'
 
 debug() { if $DEBUG; then printf '[check-compound] %s\n' "$*" >&2; fi; }
@@ -269,6 +272,7 @@ matches_prefix_list() {
     for prefix in "${list_ref[@]}"; do
       if [[ "$cmd" == "$prefix" ]] || [[ "$cmd" == "$prefix "* ]] || [[ "$cmd" == "$prefix/"* ]]; then
         debug "MATCH ($label): '$cmd' -> '$prefix'"
+        match_reason="starts with $label prefix '$prefix'"
         return 0
       fi
     done
@@ -314,6 +318,7 @@ matches_glob_list() {
     for pat in "${glist_ref[@]}"; do
       if glob_match_one "$cmd" "$pat"; then
         debug "MATCH ($label glob): '$cmd' ~ '$pat'"
+        match_reason="matches $label pattern '$pat'"
         return 0
       fi
     done
@@ -354,19 +359,23 @@ all_allowed() {
   return 0
 }
 
-# Check if any command in the given array matches the deny list.
+# Check if any command in the given array matches the deny list. Every denied
+# command and the rule it matched are appended to denied_report, so the deny
+# message names them all rather than only saying that one exists.
 any_denied() {
   local -n cmds_ref=$1
   [[ ${#denied_prefixes[@]} -eq 0 && ${#denied_globs[@]} -eq 0 ]] && return 1
 
+  local found=1
   for cmd in "${cmds_ref[@]}"; do
     [[ -z "$cmd" ]] && continue
     if is_denied "$cmd"; then
       debug "Denied segment found: $cmd"
-      return 0
+      denied_report+="${denied_report:+; }'$cmd' $match_reason"
+      found=0
     fi
   done
-  return 1
+  return $found
 }
 
 # ---------------------------------------------------------------------------
@@ -443,7 +452,7 @@ main() {
   # Simple command - check directly without shfmt parsing
   if ! needs_compound_parse "$command"; then
     debug "Simple command"
-    is_denied "$command" && deny "Command matches a denied rule"
+    is_denied "$command" && deny "Blocked by a Bash(...) deny rule in Claude Code settings: '$command' $match_reason."
     is_allowed "$command" && approve
     exit 0
   fi
@@ -461,7 +470,7 @@ main() {
 
   # Not all approved: actively deny if any segment is in the deny list,
   # otherwise fall through to Claude Code's native permission prompt.
-  any_denied extracted_commands && deny "Compound command contains a denied sub-command"
+  any_denied extracted_commands && deny "Blocked by a Bash(...) deny rule in Claude Code settings. Denied sub-command(s): $denied_report. No other sub-command matched a deny rule."
   exit 0
 }
 
