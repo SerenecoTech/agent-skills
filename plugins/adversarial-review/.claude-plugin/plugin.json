@@ -1,7 +1,7 @@
 {
   "name": "adversarial-review",
-  "description": "Adversarial code, architecture and specification review using OpenAI Codex as a second hostile reviewer. Two front doors (review-code, review-design) over one shared engine, plus PreToolUse hooks that enforce what a skill cannot: write-path authorisation, refutation-appendix ingestion, and rubric integrity.",
-  "version": "0.1.2",
+  "description": "Adversarial code, architecture and specification review using a second hostile reviewer: OpenAI Codex when available, otherwise a separate Claude Opus process. Two front doors (review-code, review-design) over one shared engine, plus PreToolUse hooks that enforce what a skill cannot: write-path authorisation, refutation-appendix ingestion and rubric integrity.",
+  "version": "0.2.0",
   "author": {
     "name": "Sereneco"
   },

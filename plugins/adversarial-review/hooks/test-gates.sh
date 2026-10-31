@@ -38,13 +38,24 @@ check() {
 mkstate() { mkdir -p "$1/.claude/adversarial-review"; printf '%s' "$2" > "$1/.claude/adversarial-review/state.json"; }
 ev_write() { jq -nc --arg cwd "$1" --arg p "$2" '{cwd:$cwd,hook_event_name:"PreToolUse",tool_name:"Edit",tool_input:{file_path:$p}}'; }
 ev_bash()  { jq -nc --arg cwd "$1" --arg c "$2" '{cwd:$cwd,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'; }
-ev_post()  { jq -nc --arg cwd "$1" --arg c "$2" --arg e "$3" '{cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:$c},tool_response:{exit_code:($e|tonumber)}}'; }
+# The real payload shapes (dumped from Claude Code 2.1.312): exit 0 fires PostToolUse with no
+# exit-code field; a non-zero exit fires PostToolUseFailure with "Exit code N" in `error`.
+ev_post()  {
+  if [ "$3" = "0" ]; then
+    jq -nc --arg cwd "$1" --arg c "$2" '{cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:$c},
+      tool_response:{stdout:"ok",stderr:"",interrupted:false,isImage:false,noOutputExpected:false}}'
+  else
+    jq -nc --arg cwd "$1" --arg c "$2" --arg e "$3" '{cwd:$cwd,hook_event_name:"PostToolUseFailure",tool_name:"Bash",tool_input:{command:$c},
+      error:("Exit code " + $e + "\nsome failure")}'
+  fi
+}
 
 echo "FAIL-OPEN — no review active must never block ordinary work"
 NO="$TMP/norev"; mkdir -p "$NO"
 check "write with no state file"        allow write-path-gate.sh        "$(ev_write "$NO" "$NO/lib/x.ts")"
-check "codex with no state file"       allow appendix-gate.sh          "$(ev_bash  "$NO" "codex exec -s danger-full-access -")"
-check "codex rubric, no state file"    allow rubric-gate.sh            "$(ev_bash  "$NO" "codex exec -")"
+CALL="bash engine/run-reviewer.sh auto . /tmp/r1 < brief.md"
+check "reviewer call with no state file" allow appendix-gate.sh       "$(ev_bash  "$NO" "$CALL")"
+check "rubric gate, no state file"     allow rubric-gate.sh            "$(ev_bash  "$NO" "$CALL")"
 mkstate "$NO" '{"active":false,"loop":"fix","authorized_paths":["nope/**"]}'
 check "write with review inactive"     allow write-path-gate.sh        "$(ev_write "$NO" "$NO/lib/x.ts")"
 check "malformed state file"           allow write-path-gate.sh        "$(printf '%s' '{"cwd":"'"$TMP"'/broken","tool_name":"Edit","tool_input":{"file_path":"a.ts"}}')"
@@ -62,23 +73,28 @@ check "review bookkeeping always writable" allow write-path-gate.sh     "$(ev_wr
 check "declared appendix writable"      allow write-path-gate.sh        "$(ev_write "$F" "docs/reviews/x/appendix.md")"
 E="$TMP/empty"; mkstate "$E" '{"active":true,"loop":"fix","authorized_paths":[]}'
 check "fix loop with empty allowlist"   deny  write-path-gate.sh        "$(ev_write "$E" "$E/lib/x.ts")"
+check "bookkeeping path climbing out with .." deny write-path-gate.sh   "$(ev_write "$V" "$V/.claude/adversarial-review/../../protected.ts")"
+check "write outside the repository"    allow write-path-gate.sh        "$(ev_write "$V" "/tmp/adversarial-review-test.txt")"
 
 echo
 echo "APPENDIX GATE — refutation carry-forward"
 A="$TMP/appendix"; mkdir -p "$A/docs/reviews/x"
 printf 'REFUTED: race in flushQueue\nFALSIFIER: holds only while the broker dedupes retries.\n' > "$A/docs/reviews/x/appendix.md"
 mkstate "$A" '{"active":true,"loop":"verdict","appendix":"docs/reviews/x/appendix.md","appendix_read":false}'
-check "non-codex bash is ignored"       allow appendix-gate.sh          "$(ev_bash "$A" "ls -la")"
-check "codex blocked while appendix unread" deny appendix-gate.sh       "$(ev_bash "$A" "codex exec -s danger-full-access - < brief.md")"
+check "a command that is not a reviewer call" allow appendix-gate.sh   "$(ev_bash "$A" "ls -la")"
+check "reviewer call while appendix unread" deny appendix-gate.sh       "$(ev_bash "$A" "$CALL")"
+check "quoted path to the wrapper"      deny  appendix-gate.sh          "$(ev_bash "$A" "bash \"/repo/engine/run-reviewer.sh\" auto /repo /tmp/r1 < brief.md")"
+mkdir -p "$A/src/deep"
+check "reviewer call after cd into a subdirectory" deny appendix-gate.sh "$(ev_bash "$A/src/deep" "$CALL")"
 mkstate "$A" '{"active":true,"loop":"verdict","appendix":"docs/reviews/x/appendix.md","appendix_read":true}'
-check "codex allowed once appendix read" allow appendix-gate.sh         "$(ev_bash "$A" "codex exec -s danger-full-access -")"
+check "reviewer call once appendix read" allow appendix-gate.sh         "$(ev_bash "$A" "$CALL")"
 M="$TMP/noappendix"; mkstate "$M" '{"active":true,"loop":"verdict","appendix":"docs/reviews/none/appendix.md"}'
-check "no prior appendix on disk"        allow appendix-gate.sh         "$(ev_bash "$M" "codex exec -")"
+check "no prior appendix on disk"       allow appendix-gate.sh          "$(ev_bash "$M" "$CALL")"
 
 echo
 echo "  content check: does the denial actually carry the appendix?"
 mkstate "$A" '{"active":true,"loop":"verdict","appendix":"docs/reviews/x/appendix.md","appendix_read":false}'
-CTX="$(ev_bash "$A" "codex exec -" | bash "$HOOKS/appendix-gate.sh" | jq -r '.hookSpecificOutput.additionalContext // ""')"
+CTX="$(ev_bash "$A" "$CALL" | bash "$HOOKS/appendix-gate.sh" | jq -r '.hookSpecificOutput.additionalContext // ""')"
 if printf '%s' "$CTX" | grep -q 'race in flushQueue' && printf '%s' "$CTX" | grep -q 'FALSIFIER'; then
   echo "  PASS  appendix contents injected into the denial"; pass=$((pass+1))
 else
@@ -88,17 +104,22 @@ fi
 echo
 echo "RUBRIC GATE — probe integrity"
 R="$TMP/rubric"; mkstate "$R" '{"active":true,"loop":"verdict","probes_previous_round":["C-LOGIC","C-RACE"]}'
-check "clean rubric + prev round -> advisory" context rubric-gate.sh    "$(ev_bash "$R" "codex exec -")"
+check "clean rubric + prev round -> advisory" context rubric-gate.sh    "$(ev_bash "$R" "$CALL")"
 # Doctored copy: two ids, same normalised description.
 PLUG="$TMP/plug"; mkdir -p "$PLUG/hooks" "$PLUG/engine"
 cp "$HOOKS"/*.sh "$PLUG/hooks/"; cp "$HOOKS/../engine"/rubric-*.md "$PLUG/engine/" 2>/dev/null
 printf '| `C-DUPE-A` | Logic errors, off-by-one, inverted conditions, wrong operator, unreachable branches |\n' >> "$PLUG/engine/rubric-code.md"
-OUT="$(ev_bash "$R" "codex exec -" | bash "$PLUG/hooks/rubric-gate.sh" 2>/dev/null)"
+OUT="$(ev_bash "$R" "$CALL" | bash "$PLUG/hooks/rubric-gate.sh" 2>/dev/null)"
 if printf '%s' "$OUT" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null 2>&1; then
   echo "  PASS  near-duplicate probe detected and blocked"; pass=$((pass+1))
 else
   echo "  FAIL  near-duplicate probe NOT detected"; fail=$((fail+1)); printf '        %s\n' "$(printf '%s' "$OUT" | head -c 200)"
 fi
+
+echo
+echo "WRITE-PATH GATE — after a change of directory"
+mkdir -p "$V/src/deep"
+check "edit after cd, verdict"          deny  write-path-gate.sh        "$(ev_write "$V/src/deep" "$V/src/a.ts")"
 
 echo
 echo "VERIFICATION RECORDER — evidence capture"
@@ -115,6 +136,21 @@ if [ "$(wc -l < "$P/.claude/adversarial-review/verifications.jsonl" | tr -d ' ')
   echo "  PASS  non-verification command not recorded"; pass=$((pass+1))
 else
   echo "  FAIL  recorded a command that is not a verification"; fail=$((fail+1))
+fi
+printf '%s' "$(ev_post "$P" "bun run test:unit" "0")" | bash "$HOOKS/verification-recorder.sh" >/dev/null 2>&1
+if [ "$(jq -r 'select(.command == "bun run test:unit") | .exit' "$P/.claude/adversarial-review/verifications.jsonl" | tail -1)" = "0" ]; then
+  echo "  PASS  passing verification recorded with exit 0"; pass=$((pass+1))
+else
+  echo "  FAIL  passing verification not recorded as exit 0"; fail=$((fail+1))
+fi
+# `test` exiting 1 still fires PostToolUse, marked by returnCodeInterpretation (observed).
+jq -nc --arg cwd "$P" '{cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Bash",tool_input:{command:"test -f build/out.js"},
+  tool_response:{stdout:"",stderr:"",interrupted:false,isImage:false,returnCodeInterpretation:"Condition is false",noOutputExpected:false}}' \
+  | bash "$HOOKS/verification-recorder.sh" >/dev/null 2>&1
+if [ "$(jq -r 'select(.command == "test -f build/out.js") | .exit' "$P/.claude/adversarial-review/verifications.jsonl" | tail -1)" != "0" ]; then
+  echo "  PASS  a non-zero exit reported through PostToolUse is not recorded as 0"; pass=$((pass+1))
+else
+  echo "  FAIL  a non-zero exit reported through PostToolUse was recorded as 0"; fail=$((fail+1))
 fi
 
 echo
