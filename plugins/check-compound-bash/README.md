@@ -94,9 +94,11 @@ $ echo '{"tool_input":{"command":"git status && danger-thing --now"}}' \
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny"
   },
-  "systemMessage": "Compound command contains a denied sub-command"
+  "systemMessage": "Blocked by a Bash(...) deny rule in Claude Code settings. Denied sub-command(s): 'danger-thing --now' starts with deny prefix 'danger-thing'. No other sub-command matched a deny rule."
 }
 ```
+
+The message names every denied sub-command and the rule each one matched, so the agent can change the command without reading your settings.
 
 Run the hook in `parse` mode to see exactly how it splits a command, one segment per line, without checking any rules:
 
