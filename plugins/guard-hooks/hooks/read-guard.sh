@@ -24,7 +24,7 @@ set -euo pipefail
 
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
 
-trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"read-guard error - failing closed\"}}"; exit 0' ERR
+trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"read-guard.sh failed at line $LINENO while checking this read, and it denies when it fails. No rule matched the file: this is a fault in the hook, not a block of the read.\"}}"; exit 0' ERR
 
 # shellcheck source=lib/secret-patterns.sh
 . "$LIB_DIR/secret-patterns.sh"

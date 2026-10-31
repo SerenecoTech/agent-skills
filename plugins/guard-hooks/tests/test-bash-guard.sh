@@ -95,6 +95,11 @@ test_bash_guard "Block force push to main"     "git push --force origin main"   
 test_bash_guard "Block force push to master"   "git push --force origin master"         true
 test_bash_guard "Block force push to prod"     "git push --force origin production"     true
 test_bash_guard "Allow force push to feature"  "git push --force origin feature/my-branch" false
+test_bash_guard "Block force push to HEAD:main" "git push --force origin HEAD:main"     true
+test_bash_guard "Block force push refs/heads"  "git push --force-with-lease origin refs/heads/master" true
+test_bash_guard "Block force push via bash -c" "bash -c \"git push --force origin main\"" true
+test_bash_guard "Allow force push, name contains main" "git push --force origin feature/maintenance" false
+test_bash_guard "Allow force push, main in later segment" "git push --force origin feat && git checkout main" false
 test_bash_guard "Allow normal push to main"    "git push origin main"                   false
 
 echo ""

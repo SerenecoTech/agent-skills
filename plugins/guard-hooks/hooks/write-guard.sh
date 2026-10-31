@@ -14,7 +14,14 @@ set -euo pipefail
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
 
 # Fail-closed: if anything errors, deny by default
-trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Hook error - fail-closed\"}}"; exit 0' ERR
+trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"write-guard.sh failed at line $LINENO while checking this write, and it denies when it fails. No rule matched the write: this is a fault in the hook, not a block of the content.\"}}"; exit 0' ERR
+
+# Emit a denial. The reason names the rule and what matched, so the caller can
+# change the write without reading this file.
+deny() {
+    jq -cn --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+    exit 0
+}
 
 # The secret patterns are shared with read-guard and output-alarm. They used to
 # live inline here, which meant the gh prefixes were fixed in one place and not
@@ -101,9 +108,8 @@ if [ -n "$file_path" ]; then
     )
 
     for pattern in "${protected_patterns[@]}"; do
-        if echo "$resolved_path" | grep -qiE "$pattern"; then
-            echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Cannot write to protected file: $file_path (resolved: $resolved_path)\"}}"
-            exit 0
+        if match=$(printf '%s' "$resolved_path" | grep -oiE "$pattern" | head -1) && [ -n "$match" ]; then
+            deny "Cannot write to protected file: $file_path (resolved: $resolved_path). The path matches '$match', a credential or secret file pattern. Write a non-secret template instead (for example .env.example), or ask the user to edit this file."
         fi
     done
 
@@ -122,8 +128,7 @@ if [ -n "$file_path" ]; then
 
     for pattern in "${critical_paths[@]}"; do
         if echo "$resolved_path" | grep -qE "$pattern"; then
-            echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Cannot write to system directory: $resolved_path\"}}"
-            exit 0
+            deny "Cannot write to system directory: $resolved_path is under ${pattern#^}, which belongs to the operating system, not the project."
         fi
     done
 fi
@@ -141,40 +146,31 @@ if [ -n "$content" ]; then
 
     # Patterns come from lib/secret-patterns.sh, shared with read-guard and
     # output-alarm. Both tiers apply here: a denied write is cheap to retry.
-    secret_patterns=("${SECRET_PATTERNS_STRICT[@]}" "${SECRET_PATTERNS_CONTEXTUAL[@]}")
-
-    for pattern in "${secret_patterns[@]}"; do
-        if echo "$content" | grep -qE "$pattern"; then
-            # Extract a snippet for context (first 50 chars of match)
-            match=$(echo "$content" | grep -oE "$pattern" | head -n 1 | cut -c1-50)
-            echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Potential secret detected in content: ${match}...\"}}"
-            exit 0
-        fi
-    done
-
-    # === 3. Entropy-based detection (catches unknown secret formats) ===
-    # Detects high-entropy strings assigned to secret-like variable names
-    if echo "$content" | grep -qE '(key|secret|token|password|auth|credential)[[:space:]]*[:=][[:space:]]*["'"'"'][a-zA-Z0-9+/=_-]{40,}["'"'"']'; then
-        echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"High-entropy value detected in secret-like variable"}}'
-        exit 0
+    # secret_scan reports the pattern and a shape hint, never the whole value.
+    if hit=$(secret_scan "$content" all); then
+        deny "Potential secret detected in content for ${file_path:-this write} (matched ${hit%%$'\t'*}, value ${hit#*$'\t'}). Read the value from an environment variable or a secrets store instead of writing it into the file. If the value is fake, a path naming itself test/fixture/example/sample is exempt from this check."
     fi
+    # Entropy-based detection (a long quoted literal assigned to a secret-like
+    # name) used to be a separate check here. It is now one of the shared
+    # patterns, which also lets read-guard apply it.
 fi
 
-# === 4. Additional safety checks ===
+# === 3. Additional safety checks ===
 
-# Check if writing to .git/config (could inject credential helpers)
+# Check if writing to .git/config (could inject credential helpers). Git writes
+# the helper as `helper = ...` on its own line under a [credential] section, and
+# an Edit may carry only that line, so a bare helper key counts as well as the
+# one-line `credential.helper` form. Git config keys are case-insensitive.
 if [ -n "$file_path" ] && echo "$file_path" | grep -qE '\.git/config$'; then
     content_check=$(echo "$input" | jq -r '(.tool_input.content // "") + (.tool_input.new_string // "")' 2>/dev/null || echo "")
-    if echo "$content_check" | grep -qE 'credential.*helper'; then
-        echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Cannot modify git credential configuration"}}'
-        exit 0
+    if echo "$content_check" | grep -qiE 'credential.*helper|^[[:space:]]*helper[[:space:]]*='; then
+        deny "Cannot modify git credential configuration: the content written to $file_path sets a credential helper, a program git runs whenever it needs a password. Ask the user to change credential settings."
     fi
 fi
 
 # Check if writing hook scripts (could inject malicious code)
 if [ -n "$file_path" ] && echo "$file_path" | grep -qE '\.git/hooks/'; then
-    echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Cannot write to git hooks directory"}}'
-    exit 0
+    deny "Cannot write to git hooks directory: $file_path is under .git/hooks, and scripts there run automatically on git commands, outside these checks. Ask the user to install the hook."
 fi
 
 # All checks passed - allow write

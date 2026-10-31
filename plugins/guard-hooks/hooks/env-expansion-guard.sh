@@ -42,7 +42,7 @@
 
 set -euo pipefail
 
-trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"env-expansion-guard error - failing closed\"}}"; exit 0' ERR
+trap 'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"env-expansion-guard.sh failed at line $LINENO while checking this command, and it denies when it fails. No rule matched the command: this is a fault in the hook, not a block of the command.\"}}"; exit 0' ERR
 
 input=$(cat)
 command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || echo "")

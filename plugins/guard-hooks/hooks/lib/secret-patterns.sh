@@ -87,9 +87,16 @@ SECRET_PATTERNS_STRICT=(
 
 SECRET_PATTERNS_CONTEXTUAL=(
     '(api_?key|api_?secret|access_?token|oauth_?token|secret_?key|private_?key|password)[[:space:]]*[:=][[:space:]]*["'"'"']?[a-zA-Z0-9_+=/.-]{20,}["'"'"']?'
-    '(key|secret|token|password|auth|credential)[[:space:]]*[:=][[:space:]]*["'"'"'][a-zA-Z0-9+/=_-]{40,}["'"'"']'
     # `git credential fill` and helper `get` output
     '^password=.{8,}'
+)
+
+# Contextual patterns matched case-insensitively. A name is as often API_KEY or
+# apiKey as api_key. Only the quoted 40+ character literal is safe to widen
+# this way: the pattern above also takes unquoted values, and folding its case
+# would match every `apiKey: process.env.SOME_LONG_NAME`.
+SECRET_PATTERNS_CONTEXTUAL_NOCASE=(
+    '(key|secret|token|password|auth|credential)[[:space:]]*[:=][[:space:]]*["'"'"'][a-zA-Z0-9+/=_-]{40,}["'"'"']'
 )
 
 # Paths whose secrets are conventionally fake. Same rule write-guard has always
@@ -105,16 +112,21 @@ secret_path_is_exempt() {
 # Prints "<pattern><TAB><first 8 chars>…(<length> chars)" and returns 0 on a hit.
 # Returns 1 and prints nothing otherwise. Never prints the whole match.
 secret_scan() {
-    local text="${1:-}" tier="${2:-all}" p m
-    local -a pats=()
-    if [ "$tier" = "strict" ]; then
-        pats=("${SECRET_PATTERNS_STRICT[@]}")
-    else
-        pats=("${SECRET_PATTERNS_STRICT[@]}" "${SECRET_PATTERNS_CONTEXTUAL[@]}")
-    fi
-    for p in "${pats[@]}"; do
-        if printf '%s' "$text" | grep -qE "$p" 2>/dev/null; then
-            m=$( { printf '%s' "$text" | grep -oE "$p" 2>/dev/null || true; } | head -n 1)
+    local text="${1:-}" tier="${2:-all}"
+    secret_scan_list -E "$text" "${SECRET_PATTERNS_STRICT[@]}" && return 0
+    [ "$tier" = "strict" ] && return 1
+    secret_scan_list -E "$text" "${SECRET_PATTERNS_CONTEXTUAL[@]}" && return 0
+    secret_scan_list -iE "$text" "${SECRET_PATTERNS_CONTEXTUAL_NOCASE[@]}"
+}
+
+# secret_scan_list <grep flags> <text> <pattern>...
+# The first pattern that matches, reported as secret_scan describes.
+secret_scan_list() {
+    local flags="$1" text="$2" p m
+    shift 2
+    for p in "$@"; do
+        if printf '%s' "$text" | grep -q "$flags" -e "$p" 2>/dev/null; then
+            m=$( { printf '%s' "$text" | grep -o "$flags" -e "$p" 2>/dev/null || true; } | head -n 1)
             printf '%s\t%s…(%s chars)' "$p" "$(printf '%s' "$m" | cut -c1-8)" "${#m}"
             return 0
         fi
